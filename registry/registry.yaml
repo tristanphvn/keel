@@ -1,0 +1,184 @@
+# Global skill registry — management metadata only.
+# SKILL.md frontmatter carries only what Claude Code supports (name, description).
+# Everything else about a skill's lifecycle lives here.
+#
+# status: draft | active | deprecated | replaced
+# When status is `replaced`, set `replaced_by: <skill-id>`.
+# `legacy_name` = the current on-disk directory name when it does not yet match
+# the <domain>-<skill-name> convention. Migration is deliberate and not yet done.
+
+version: 1
+updated: 2026-09-17
+
+conventions:
+  skill_path: ~/.claude/skills/<skill-name>/SKILL.md
+  naming: <domain>-<skill-name>
+  domains: [core, review, eng, design, sec, data, ops]
+  project_skill_path: <repository>/.claude/skills/
+
+skills:
+  - id: core-self-correction
+    legacy_name: self-correction-coding-discipline
+    domain: core
+    status: active
+    auto_trigger: true
+    purpose: Source-grounded engineering, scope control, verification honesty, and the correction workflow after a wrong assumption.
+    depends_on: []
+    rules:
+      - VERIFY-001
+      - VERIFY-002
+      - SCOPE-001
+      - TEST-001
+      - CORRECTION-001
+    version: 1
+    notes: >
+      Oversized — carries core, eng, and ops concerns at once. Candidate for a
+      later split into core-self-correction + eng-coding-discipline +
+      ops-completion-handoff. Do not split without re-verifying cross-references.
+
+  - id: review-intent-first
+    legacy_name: intent-first-review
+    domain: review
+    status: active
+    auto_trigger: true
+    purpose: Judge tasks and specs by intent, behavior, scope, and correctness — never wording, style, or grammar.
+    depends_on: []
+    rules: [REVIEW-001, REVIEW-002, REVIEW-003]
+    version: 1
+
+  - id: review-adversarial-consensus
+    legacy_name: adversarial-consensus
+    domain: review
+    status: active
+    auto_trigger: true
+    purpose: Independent defense, adversarial falsification, and evidence-based adjudication for high-stakes conclusions.
+    depends_on:
+      - core-self-correction
+      - review-intent-first
+    rules: [CONSENSUS-001, CONSENSUS-002, CONSENSUS-003, CONSENSUS-004]
+    version: 1
+
+  - id: review-code
+    legacy_name: strict-review
+    domain: review
+    status: active
+    auto_trigger: true
+    purpose: Review someone else's code — PR, branch diff, handed-over file — with severity ladder and file:line evidence.
+    depends_on:
+      - review-intent-first
+      - review-adversarial-consensus
+    rules: [TEST-001, REVIEW-002]
+    version: 1
+    notes: >
+      Physically migrated 2026-09-18 (pilot). On-disk directory is now
+      `review-code`; `legacy_name` is retained as provenance only, not as a
+      current path. Backup: backups/reorg-20260917/pilot-review-code/.
+
+  - id: design-ui-discipline
+    legacy_name: ui-design-discipline
+    domain: design
+    status: active
+    auto_trigger: true
+    purpose: Reference-backed UI design — authority order, human-designed references, anti-AI-slop review.
+    depends_on: []
+    rules: [UI-001, UI-002, UI-003, UI-004]
+    version: 1
+
+  - id: ops-ticket-pr
+    legacy_name: ticket-pr
+    domain: ops
+    status: active
+    auto_trigger: true
+    purpose: Write ticket reports, PR descriptions, QA cards, and estimations from vault templates.
+    depends_on:
+      - review-intent-first
+    rules: [TEST-001, SCOPE-003]
+    version: 1
+
+  - id: ops-vault-rules
+    legacy_name: vault-rules
+    domain: ops
+    status: active
+    auto_trigger: true
+    purpose: Load universal engineering rules, project overrides, and the active work card for the current branch.
+    depends_on: []
+    rules: []
+    version: 1
+
+  - id: eng-workos
+    legacy_name: workos
+    domain: eng
+    status: active
+    auto_trigger: true
+    purpose: WorkOS AuthKit, SSO, Directory Sync, RBAC, webhooks, CLI, and migration guidance.
+    depends_on: []
+    rules: []
+    version: 1
+    notes: Vendor skill, externally maintained. Do not rename or hand-edit; it is refreshed by the WorkOS installer.
+
+  - id: eng-workos-widgets
+    legacy_name: workos-widgets
+    domain: eng
+    status: active
+    auto_trigger: true
+    purpose: Implement and debug WorkOS embeddable widgets across supported frontends and backend SDKs.
+    depends_on:
+      - eng-workos
+    rules: []
+    version: 1
+    notes: Vendor skill, externally maintained.
+
+  - id: core-self-correction-regression
+    legacy_name: self-correction-regression
+    domain: core
+    status: replaced
+    replaced_by: core-self-correction
+    auto_trigger: false
+    purpose: Original correction-incident workflow; absorbed as a strict subset.
+    depends_on: []
+    rules: []
+    version: 1
+    notes: Removed from ~/.claude/skills on 2026-09-17. Backup at ~/.claude/backups/self-correction-regression-20260917/SKILL.md.
+
+# Planned — architecture only, not yet authored. Do not create until requested.
+planned:
+  - id: core-source-grounding
+    domain: core
+    status: draft
+    purpose: Read-trace-verify discipline extracted from core-self-correction for standalone loading.
+  - id: eng-coding-discipline
+    domain: eng
+    status: draft
+    purpose: Implementation discipline, minimal-but-complete change, final diff review.
+  - id: eng-debugging
+    domain: eng
+    status: draft
+    purpose: Root-cause debugging workflow — reproduce, bisect, isolate, verify the fix.
+  - id: eng-api-investigation
+    domain: eng
+    status: draft
+    purpose: API/environment investigation protocol and the GET checklist.
+  - id: eng-git-discipline
+    domain: eng
+    status: draft
+    purpose: Branching, commit hygiene, and the no-unrequested-mutation boundary.
+  - id: design-reference-discovery
+    domain: design
+    status: draft
+    purpose: Find and evaluate human-designed references with observed visual evidence.
+  - id: design-ui-review
+    domain: design
+    status: draft
+    purpose: AI-slop review pass and design-system conformance check on rendered UI.
+  - id: sec-security-review
+    domain: sec
+    status: draft
+    purpose: Auth, authorization, tenant isolation, and secret-handling review.
+  - id: data-migration-safety
+    domain: data
+    status: draft
+    purpose: Migration reversibility, data integrity, and destructive-change review.
+  - id: ops-completion-handoff
+    domain: ops
+    status: draft
+    purpose: Acceptance adjudication, completion reporting, and handoff.

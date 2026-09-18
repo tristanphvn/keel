@@ -1,0 +1,59 @@
+# --- Secrets: never commit ---
+# Deliberately narrow. Broad globs like *token* silently swallow legitimate
+# documentation (e.g. references/token-strategies.md) — match real artifacts only.
+.env
+.env.*
+*.pem
+*.key
+*.p12
+*.pfx
+.credentials.json
+credentials.json
+.npmrc
+.netrc
+*.token
+*_token.txt
+*-token.txt
+*.secret
+secrets.*
+
+# --- Claude Code runtime state (machine-local, not architecture) ---
+projects/
+sessions/
+session-env/
+shell-snapshots/
+file-history/
+paste-cache/
+history.jsonl
+todos/
+statsig/
+daemon/
+jobs/
+ide/
+cache/
+downloads/
+plans/
+.last-cleanup
+
+# --- Logs, backups, incident history (local only) ---
+logs/
+backups/
+*.log
+*.bak
+**/*.original.md
+
+# --- Installed third-party plugin cache ---
+plugins/
+
+# --- Local settings that carry machine paths or per-user permissions ---
+settings.local.json
+config.json
+mcp-needs-auth-cache.json
+
+# --- OS / editor noise ---
+.DS_Store
+Thumbs.db
+desktop.ini
+.idea/
+.vscode/
+*.swp
