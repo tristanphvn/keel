@@ -13,7 +13,7 @@
 ## Gotchas
 
 - Feature flags are delivered via the `feature_flags` claim in the access token — NOT via a separate API call. You must read them from the session.
-- Read the `feature_flags` claim from the session/access token. Some frameworks expose convenience helpers like `session.getFeatureFlag()`, but there is no standalone `workos.featureFlags.get()` API method. Claude tends to invent one.
+- Read the `feature_flags` claim from the session/access token. Some frameworks expose convenience helpers like `session.getFeatureFlag()`, but there is no standalone `workos.featureFlags.get()` API method. Coding agents tend to invent one.
 - Flags have three targeting states: None (off for all), Some (targeted orgs/users), All (on for everyone). There is no percentage rollout — it's discrete targeting.
 - Flag evaluation requires a valid session with `feature_flags` claim. If using `loadSealedSession()`, the claim is included automatically.
 - To refresh flag values mid-session, call `session.refresh()` — stale tokens carry stale flag state.

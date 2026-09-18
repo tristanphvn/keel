@@ -1,15 +1,23 @@
 #!/usr/bin/env bash
-# Install this repo's architecture into ~/.claude (repo -> machine).
+# Install this repo's architecture into the agent config home (repo -> machine).
 #
-#   bash scripts/install.sh            # dry run: shows exactly what would change
-#   bash scripts/install.sh --apply    # performs the copy, after backing up
+#   AGENT_HOME=~/.your-agent bash scripts/install.sh            # dry run
+#   AGENT_HOME=~/.your-agent bash scripts/install.sh --apply    # writes, after backing up
+#
+# AGENT_HOME must point at the configuration directory your coding agent reads.
+# Defaults to ~/.agent, which is deliberately neutral: if your agent uses another
+# directory, set AGENT_HOME rather than editing this script.
+#
+# Files carry the literal token {{AGENT_HOME}} wherever they need an absolute
+# path. It is rendered to the real destination on the way in, so the repo stays
+# free of machine-specific paths.
 #
 # Never deletes. Files present on the machine but absent from the repo are left
 # alone and reported, so a local-only skill is never silently destroyed.
 set -uo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-DEST="${CLAUDE_HOME:-$HOME/.claude}"
+DEST="${AGENT_HOME:-$HOME/.agent}"
 APPLY=0
 [ "${1:-}" = "--apply" ] && APPLY=1
 
@@ -19,9 +27,12 @@ rules|$DEST/rules
 skills|$DEST/skills
 registry|$DEST/skill-registry
 commands|$DEST/commands
-config/CLAUDE.md|$DEST/CLAUDE.md
+config/AGENTS.md|$DEST/AGENTS.md
 config/learned-rules.md|$DEST/learned-rules.md
 "
+
+# Print a repo file with {{AGENT_HOME}} rendered to the real destination path.
+render() { sed "s|{{AGENT_HOME}}|$DEST|g" "$1"; }
 
 echo "repo:        $ROOT"
 echo "destination: $DEST"
@@ -53,12 +64,12 @@ for pair in $PAIRS; do
       target="$dst/$rel"
       if [ ! -f "$target" ]; then
         echo "  NEW      $target"; changed=$((changed + 1))
-      elif ! cmp -s "$f" "$target"; then
+      elif ! render "$f" | cmp -s - "$target"; then
         echo "  OVERWRITE $target"; changed=$((changed + 1))
       fi
       if [ "$APPLY" -eq 1 ]; then
         mkdir -p "$(dirname "$target")"
-        cp "$f" "$target"
+        render "$f" > "$target"
       fi
     done < <(find "$src" -type f)
 
@@ -70,17 +81,20 @@ for pair in $PAIRS; do
   else
     if [ ! -f "$dst" ]; then
       echo "  NEW      $dst"; changed=$((changed + 1))
-    elif ! cmp -s "$src" "$dst"; then
+    elif ! render "$src" | cmp -s - "$dst"; then
       echo "  OVERWRITE $dst"; changed=$((changed + 1))
     fi
-    [ "$APPLY" -eq 1 ] && { mkdir -p "$(dirname "$dst")"; cp "$src" "$dst"; }
+    if [ "$APPLY" -eq 1 ]; then
+      mkdir -p "$(dirname "$dst")"
+      render "$src" > "$dst"
+    fi
   fi
 done
 
 echo
 echo "$changed file(s) would change."
 if [ "$APPLY" -eq 1 ]; then
-  echo "Applied. Restart Claude Code so the rule imports and skill list reload."
+  echo "Applied. Restart your coding agent so the rule imports and skill list reload."
 else
   echo "Nothing written. Re-run with --apply to install."
 fi

@@ -62,7 +62,7 @@ workos_client.user_management.update_organization_membership(
 
 ## Gotchas
 
-- Always check permissions (role.permissions.includes('action')), NOT role slugs (role.slug === 'admin') — slug checks break in multi-org with custom roles. Claude defaults to slug checks.
+- Always check permissions (role.permissions.includes('action')), NOT role slugs (role.slug === 'admin') — slug checks break in multi-org with custom roles. Coding agents default to slug checks.
 - Role assignment requires the MEMBERSHIP ID, not the user ID — fetch via listOrganizationMemberships() first, then call updateOrganizationMembership(membershipId, { roleSlug })
 - IdP group mapping OVERRIDES API/Dashboard role assignments on every auth — updateOrganizationMembership() changes silently revert on next login if IdP mapping exists
 - IdP role mapping only works with environment-level roles, NOT org-level roles

@@ -1,6 +1,6 @@
 # Learned Rules — moved
 
-Canonical location is now `~/.claude/rules/`, split by concern and imported from `CLAUDE.md`:
+Canonical location is now `{{AGENT_HOME}}/rules/`, split by concern and imported from `AGENTS.md`:
 
 | File | Rule IDs |
 | --- | --- |
@@ -14,4 +14,4 @@ Canonical location is now `~/.claude/rules/`, split by concern and imported from
 
 Rule IDs are unchanged — skills referencing `SCOPE-001`, `TEST-001`, etc. still resolve. Add new rules to the matching file, not here.
 
-Pre-split snapshot: `~/.claude/backups/reorg-20260917/learned-rules.md`.
+Pre-split snapshot: `{{AGENT_HOME}}/backups/reorg-20260917/learned-rules.md`.

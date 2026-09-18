@@ -1,5 +1,5 @@
 # Global skill registry — management metadata only.
-# SKILL.md frontmatter carries only what Claude Code supports (name, description).
+# SKILL.md frontmatter carries only what the agent runtime supports (name, description).
 # Everything else about a skill's lifecycle lives here.
 #
 # status: draft | active | deprecated | replaced
@@ -11,10 +11,10 @@ version: 1
 updated: 2026-09-17
 
 conventions:
-  skill_path: ~/.claude/skills/<skill-name>/SKILL.md
+  skill_path: {{AGENT_HOME}}/skills/<skill-name>/SKILL.md
   naming: <domain>-<skill-name>
   domains: [core, review, eng, design, sec, data, ops]
-  project_skill_path: <repository>/.claude/skills/
+  project_skill_path: <repository>/<agent-config-dir>/skills/
 
 skills:
   - id: core-self-correction
@@ -138,7 +138,7 @@ skills:
     depends_on: []
     rules: []
     version: 1
-    notes: Removed from ~/.claude/skills on 2026-09-17. Backup at ~/.claude/backups/self-correction-regression-20260917/SKILL.md.
+    notes: Removed from {{AGENT_HOME}}/skills on 2026-09-17. Backup at {{AGENT_HOME}}/backups/self-correction-regression-20260917/SKILL.md.
 
 # Planned — architecture only, not yet authored. Do not create until requested.
 planned:

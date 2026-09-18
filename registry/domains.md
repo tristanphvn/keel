@@ -2,7 +2,7 @@
 
 Seven canonical domains. Do not add more without a real need — a domain that holds one skill forever was a tag, not a domain.
 
-Skill id = `<domain>-<skill-name>`. The domain lives in the **name**, not in a nested directory: Claude Code loads personal skills from `~/.claude/skills/<skill-name>/SKILL.md` only.
+Skill id = `<domain>-<skill-name>`. The domain lives in the **name**, not in a nested directory: the agent runtime loads personal skills from `{{AGENT_HOME}}/skills/<skill-name>/SKILL.md` only.
 
 | Domain | Owns | Examples |
 | --- | --- | --- |
@@ -23,18 +23,18 @@ If two domains fit equally, the skill is probably two skills.
 ## Rule vs skill
 
 ```text
-RULE  = short behavior that should apply almost always   → ~/.claude/rules/
-SKILL = repeatable multi-step workflow, loaded on demand → ~/.claude/skills/
+RULE  = short behavior that should apply almost always   → {{AGENT_HOME}}/rules/
+SKILL = repeatable multi-step workflow, loaded on demand → {{AGENT_HOME}}/skills/
 ```
 
-"Do not modify unrelated code" is a rule. "Perform adversarial PR review" is a skill. Long procedures never go in `CLAUDE.md` or in a rules file.
+"Do not modify unrelated code" is a rule. "Perform adversarial PR review" is a skill. Long procedures never go in `AGENTS.md` or in a rules file.
 
 ## Global vs project
 
 | Scope | Location |
 | --- | --- |
-| Reusable across projects | `~/.claude/skills/<skill-name>/SKILL.md` |
-| Specific to one repository | `<repository>/.claude/skills/<skill-name>/SKILL.md` |
+| Reusable across projects | `{{AGENT_HOME}}/skills/<skill-name>/SKILL.md` |
+| Specific to one repository | `<repository>/<agent-config-dir>/skills/<skill-name>/SKILL.md` |
 
 Project-specific behavior stays in the repository. Do not promote it into the global library because it was useful once.
 

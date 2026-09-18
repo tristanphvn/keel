@@ -5,7 +5,7 @@ Why the configuration is split the way it is. Decisions recorded here are alread
 ## Layer separation
 
 ```
-config/CLAUDE.md          always loaded — imports every rule file
+config/AGENTS.md          always loaded — imports every rule file
   └── rules/*.md          always on: short behavior statements, no procedures
 skills/<name>/SKILL.md    lazy: loaded only when the task matches the description
 registry/registry.yaml    management metadata only: never loaded at runtime
@@ -21,7 +21,7 @@ Rule IDs did not change across the split. `config/learned-rules.md` is the redir
 
 ## Why the skills directory stays flat
 
-Claude Code discovers skills at `~/.claude/skills/<name>/SKILL.md`. Grouping them into `skills/review/`, `skills/core/` etc. would break discovery. So domains live in the registry as id prefixes (`review-code`, `core-self-correction`) while the filesystem stays flat. The repo mirrors the runtime layout exactly rather than imposing a tidier one that would not load.
+The agent runtime discovers skills at `$AGENT_HOME/skills/<name>/SKILL.md`. Grouping them into `skills/review/`, `skills/core/` etc. would break discovery. So domains live in the registry as id prefixes (`review-code`, `core-self-correction`) while the filesystem stays flat. The repo mirrors the runtime layout exactly rather than imposing a tidier one that would not load.
 
 ## Registry ids vs directory names
 
@@ -37,4 +37,4 @@ This gives a bidirectional chain: `registry ↔ skill ↔ rules`. `validate.sh` 
 
 ## Backup discipline
 
-Every structural change backs up first, under `~/.claude/backups/<change>-<date>/`, hash-verified before anything is deleted. Backups stay on the machine and are excluded from this repo — they are recovery state, not architecture.
+Every structural change backs up first, under `$AGENT_HOME/backups/<change>-<date>/`, hash-verified before anything is deleted. Backups stay on the machine and are excluded from this repo — they are recovery state, not architecture.

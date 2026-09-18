@@ -19,10 +19,10 @@
 ## Gotchas
 
 - FGA extends RBAC — it is NOT a replacement. Org-level roles from RBAC still apply. FGA adds resource-scoped roles on top.
-- **SDK namespace is `workos.authorization.*`, NOT `workos.fga.*`.** The product is called FGA but every SDK method lives under `authorization`: `check`, `assignRole`, `removeRoleAssignment`, `listResources`, `createResource`, etc. Claude consistently invents `workos.fga.check`, `workos.fga.assignRole`, `workos.warrants.check` (legacy Warrant API, removed). Always use `workos.authorization.*`.
+- **SDK namespace is `workos.authorization.*`, NOT `workos.fga.*`.** The product is called FGA but every SDK method lives under `authorization`: `check`, `assignRole`, `removeRoleAssignment`, `listResources`, `createResource`, etc. Coding agents consistently invent `workos.fga.check`, `workos.fga.assignRole`, `workos.warrants.check` (legacy Warrant API, removed). Always use `workos.authorization.*`.
 - Resource types are configured ONLY in the Dashboard, not via API. Slugs are immutable after creation — choose carefully.
 - Access checks use `organizationMembershipId`, NOT `userId`. Fetch membership first via `listOrganizationMemberships()`.
-- Permissions use `{resource_type}:{action}` format (e.g., `project:edit`). Claude tends to invent flat permission names like `editProject`.
+- Permissions use `{resource_type}:{action}` format (e.g., `project:edit`). Coding agents tend to invent flat permission names like `editProject`.
 - Hierarchy max depth is 5 levels, max 10 child types per resource type, max 50 resource types per environment.
 - First org-level role creation on a resource type makes that org independent — it stops inheriting environment-level roles. Same behavior as RBAC.
 - `resourceExternalId` (your app's ID) and `resourceTypeSlug` can be used instead of WorkOS `resource_id` in all API calls — prefer external IDs to avoid storing WorkOS IDs.

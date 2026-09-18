@@ -1,10 +1,10 @@
 # Skill template
 
-Copy the block below to `~/.claude/skills/<domain>-<skill-name>/SKILL.md`, then add a matching record to `registry.yaml`.
+Copy the block below to `{{AGENT_HOME}}/skills/<domain>-<skill-name>/SKILL.md`, then add a matching record to `registry.yaml`.
 
 ## Frontmatter — supported fields only
 
-Claude Code reads **`name`** and **`description`** from SKILL.md frontmatter. Nothing else is guaranteed to be parsed. Domain, status, version, and dependencies are management metadata and belong in `registry.yaml`, not here — inventing frontmatter keys produces a file that looks configured but is not.
+The agent runtime reads **`name`** and **`description`** from SKILL.md frontmatter. Nothing else is guaranteed to be parsed. Domain, status, version, and dependencies are management metadata and belong in `registry.yaml`, not here — inventing frontmatter keys produces a file that looks configured but is not.
 
 - `name` — must equal the directory name, kebab-case, `<domain>-<skill-name>`.
 - `description` — the only thing that decides whether the skill loads. Write it as trigger surface: name the artifacts, verbs, and phrasings (including Vietnamese) that should pull it in. Third person, one paragraph.
@@ -73,6 +73,6 @@ What the skill reports when done: `IMPLEMENTED` / `VERIFIED` / `UNVERIFIED` / `B
 - [ ] No unsupported frontmatter keys
 - [ ] Description names real triggers, not a summary of the body
 - [ ] No duplicate of an existing skill — checked `registry.yaml`; overlapping skill either merged or given an explicit boundary
-- [ ] Long always-on behavior extracted to `~/.claude/rules/` instead
+- [ ] Long always-on behavior extracted to `{{AGENT_HOME}}/rules/` instead
 - [ ] Registry record added with `id`, `domain`, `status`, `purpose`, `depends_on`, `version`
 - [ ] Skill loaded in a fresh session and confirmed to appear in the available-skills list

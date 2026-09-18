@@ -10,4 +10,4 @@ After discovering an incorrect assumption, check whether that same assumption af
 
 ## CORRECTION-003 — Promote, do not accumulate
 
-A repeated or generalizable lesson becomes a rule here or a skill. Incident narrative stays in `~/.claude/logs/self-correction-log.md` and is never loaded wholesale into session context.
+A repeated or generalizable lesson becomes a rule here or a skill. Incident narrative stays in `{{AGENT_HOME}}/logs/self-correction-log.md` and is never loaded wholesale into session context.

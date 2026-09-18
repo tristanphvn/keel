@@ -1,6 +1,6 @@
 ---
 name: self-correction-coding-discipline
-description: Global engineering discipline for source-grounded reasoning, self-correction after wrong assumptions, API verification, regression prevention, strict task scope control, minimal code changes, and evidence-based completion reporting. Use for coding, repository work, debugging, API investigations, implementation, refactoring, tests, PR preparation, and whenever the user or objective evidence shows Claude made an incorrect assumption.
+description: Global engineering discipline for source-grounded reasoning, self-correction after wrong assumptions, API verification, regression prevention, strict task scope control, minimal code changes, and evidence-based completion reporting. Use for coding, repository work, debugging, API investigations, implementation, refactoring, tests, PR preparation, and whenever the user or objective evidence shows the agent made an incorrect assumption.
 ---
 
 # Self-Correction, Coding Discipline, and Scope Control
@@ -224,7 +224,7 @@ Fix the root cause only inside the approved task boundary.
 
 # PART D — SELF-CORRECTION
 
-When the user or objective evidence shows Claude made a wrong assumption, do not merely apologize.
+When the user or objective evidence shows the agent made a wrong assumption, do not merely apologize.
 
 Perform a correction workflow.
 
@@ -232,10 +232,10 @@ Perform a correction workflow.
 
 Run this workflow proactively — do not wait for the user to say "remember this" — when:
 
-- the user says Claude is wrong;
+- the user says the agent is wrong;
 - the user says: "sai rồi", "không phải", "tại sao lại suy ra như vậy", "tôi nói rồi mà", "đã bảo...", "check lại", "đừng tự phán đoán", "lần trước cũng sai cái này";
 - tool output, API output, source code, or tests contradict an earlier statement;
-- Claude answered from memory without inspecting available source;
+- the agent answered from memory without inspecting available source;
 - the wrong environment, endpoint, branch, tenant, project, repository, or version was used;
 - the same class of mistake occurs more than once.
 
@@ -620,7 +620,7 @@ For high-impact work — security, tenancy, data integrity, migrations, concurre
 
 # PART K — PERSISTENT REGRESSION RULES
 
-Store reusable lessons in `~/.claude/rules/`, in the file matching the concern:
+Store reusable lessons in `{{AGENT_HOME}}/rules/`, in the file matching the concern:
 
 | File | Rule IDs |
 | --- | --- |
@@ -632,7 +632,7 @@ Store reusable lessons in `~/.claude/rules/`, in the file matching the concern:
 | `rules/50-design.md` | UI-* |
 | `rules/60-adversarial-consensus.md` | CONSENSUS-* |
 
-Rules are short always-on behavior. A multi-step procedure is a skill, not a rule — see `~/.claude/skill-registry/`.
+Rules are short always-on behavior. A multi-step procedure is a skill, not a rule — see `{{AGENT_HOME}}/skill-registry/`.
 
 Before adding a new rule:
 
@@ -684,7 +684,7 @@ Save:
 
 Create/use:
 
-`~/.claude/logs/self-correction-log.md`
+`{{AGENT_HOME}}/logs/self-correction-log.md`
 
 For meaningful reasoning/execution mistakes append:
 
@@ -754,7 +754,7 @@ You may point out risks or contradictions, but do not silently redesign the task
 
 Read the task for intent, not for prose quality. Informal, shorthand, awkward, or Vietnamese/English-mixed phrasing is not a defect when the intended behavior and scope are clear — normalize it naturally and proceed. Escalate wording only when two or more readings would materially change implementation or acceptance. See skill `intent-first-review`.
 
-When the user corrects Claude about their own requirement or a prior decision they made, treat the correction as authoritative. Do not repeatedly argue for an earlier assumption. For objectively verifiable technical claims, verify the corrected model before storing it as a technical fact.
+When the user corrects the agent about their own requirement or a prior decision they made, treat the correction as authoritative. Do not repeatedly argue for an earlier assumption. For objectively verifiable technical claims, verify the corrected model before storing it as a technical fact.
 
 ---
 

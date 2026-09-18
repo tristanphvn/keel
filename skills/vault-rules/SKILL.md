@@ -5,17 +5,17 @@ description: Use at the start of work in any repo that has a vault at $VAULT_ROO
 
 # Vault rules loader
 
-Rules live outside the repo. `$VAULT_ROOT` (fallback `E:\vault`, then `%USERPROFILE%\vault`).
+Rules live outside the repo, under `$VAULT_ROOT` (fallback `%USERPROFILE%\vault`, then `~/vault`).
 
 - `_common/` — universal, every project
 - `<project>/` — project-specific; **overrides `_common/` on conflict**
 
-Project slug = the vault folder matching the repo (e.g. `cainz-pet-portal`). Confirm with `ls $VAULT_ROOT`.
+Project slug = the vault folder matching the repo (e.g. `<customer>-pet-portal`). Confirm with `ls $VAULT_ROOT`.
 
 ## Step 1 — Read, in this order
 
 1. `_common/operations/workflow.md` — Step 1-7 + iron rule "never auto-edit"
-2. `_common/operations/collaboration-style.md` — user = reviewer, Claude = senior eng
+2. `_common/operations/collaboration-style.md` — user = reviewer, agent = senior eng
 3. `_common/operations/engineering-principles.md` — "Must be a standard, not a bandaid"
 4. `_common/operations/task-discipline.md`
 5. `<project>/operations/workflow-overrides.md` — branch prefix, commit format, PR convention
@@ -41,11 +41,11 @@ The rules that most often get broken:
 
 - **Never edit code without explicit confirmation.** Present the plan, wait for "ok". This holds even mid-task and even when the user said "continue".
 - **Never work on `main` / the base branch.** Branch first, named per the project's `workflow-overrides.md`.
-- **Never push or merge unless asked.** Claude's ceiling is "open a PR". Merging belongs to the user.
+- **Never push or merge unless asked.** The agent's ceiling is "open a PR". Merging belongs to the user.
 - **Git flow is one-way** where the project says so (e.g. `feature → develop → release → main`): no shortcut merges, no back-merges.
 - **Ask, don't infer, when the spec is silent.** Do not invent behaviour and do not decide on the user's behalf.
 - **Root cause, not bandaid**, and handle every failure mode the change can hit.
-- **Comment language** per the project rule (Cainz projects: English only, no Vietnamese/Japanese).
+- **Comment language** per the project rule (some customers require English only — no Vietnamese/Japanese).
 - **No AI traces** in repos that forbid them: no `Co-Authored-By`, no AI-generated docs committed inside the tree.
 
 ## Step 4 — On conflict

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Static validation of the rules/skills/registry architecture in this repo.
-# Read-only: never writes, never touches ~/.claude.
+# Read-only: never writes, never touches $AGENT_HOME.
 # Usage: bash scripts/validate.sh
 set -uo pipefail
 
@@ -90,14 +90,34 @@ for rid in $(grep -hoE '(VERIFY|SCOPE|ROOT|CODE|TEST|API|REVIEW|CORRECTION|UI|CO
   if printf '%s\n' "$ids" | grep -qx "$rid"; then pass "$rid defined in rules/"; else bad "$rid referenced by registry but not defined in rules/"; fi
 done
 
-echo "== 7. config/CLAUDE.md imports resolve =="
-for imp in $(grep -oE '@~/\.claude/(rules/[A-Za-z0-9._-]+|learned-rules\.md)' config/CLAUDE.md | sed 's|@~/\.claude/||'); do
+echo "== 7. config/AGENTS.md imports resolve =="
+for imp in $(grep -oE '@\{\{AGENT_HOME\}\}/(rules/[A-Za-z0-9._-]+|learned-rules\.md)' config/AGENTS.md | sed 's|@{{AGENT_HOME}}/||'); do
   case "$imp" in
     learned-rules.md) target="config/learned-rules.md" ;;
     *)                target="$imp" ;;
   esac
   if [ -f "$target" ]; then pass "$imp -> $target"; else bad "$imp -> $target missing in repo"; fi
 done
+
+echo "== 8. Portability: no machine-specific or vendor-locked paths =="
+# The repo must stay agent-neutral and free of one developer's filesystem. Files
+# that get installed use the {{AGENT_HOME}} token; nothing may hardcode a home
+# directory, a drive letter, or a single vendor's config directory.
+leak_patterns='(^|[^A-Za-z])(~|\$HOME)/\.[a-z-]+/(rules|skills|skill-registry)|[A-Za-z]:\\(Users|vault|personal)|/c/Users/'
+leaks=$(git ls-files -z | xargs -0 grep -lE "$leak_patterns" 2>/dev/null | grep -v '^scripts/validate.sh$')
+if [ -z "$leaks" ]; then
+  pass "no hardcoded home, drive-letter, or vendor config paths"
+else
+  for f in $leaks; do bad "machine-specific or vendor-locked path in $f"; done
+fi
+
+# Installed files must not carry a raw absolute AGENT_HOME; they use the token.
+raw=$(git ls-files rules skills registry config commands -z | xargs -0 grep -lE '\$AGENT_HOME' 2>/dev/null)
+if [ -z "$raw" ]; then
+  pass "installed files use the {{AGENT_HOME}} token, not a shell variable"
+else
+  for f in $raw; do bad "$f uses \$AGENT_HOME; installed files need {{AGENT_HOME}}"; done
+fi
 
 echo
 if [ "$fail" -eq 0 ]; then

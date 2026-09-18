@@ -1,19 +1,19 @@
 ---
-description: Dựng (hoặc cập nhật) vault knowledge cho repo hiện tại ở E:\vault\<project-slug>\ theo đúng convention chung
+description: Dựng (hoặc cập nhật) vault knowledge cho repo hiện tại ở $VAULT_ROOT\<project-slug>\ theo đúng convention chung
 argument-hint: "[project-slug] (tuỳ chọn — mặc định suy ra từ tên repo)"
 allowed-tools: Read, Write, Edit, Glob, Grep, Bash, Task
 ---
 
 # /setup-vault
 
-Dựng vault cho repo đang mở. Slug: `$1` nếu có, không thì suy ra từ tên thư mục repo (kebab-case, giữ tiền tố khách hàng: `WanQol-WEB-PUSH` → `cainz-wanqol-web-push`).
+Dựng vault cho repo đang mở. Slug: `$1` nếu có, không thì suy ra từ tên thư mục repo (kebab-case, giữ tiền tố khách hàng: `Product-WEB-PUSH` → `<customer>-product-web-push`).
 
-**Rule nền:** `E:\vault\_common\operations\vault-location.md`. Đọc nó trước nếu chưa có trong context.
+**Rule nền:** `$VAULT_ROOT\_common\operations\vault-location.md`. Đọc nó trước nếu chưa có trong context.
 
 ## Bất biến — vi phạm là làm lại
 
-1. Vault sống ở `E:\vault\<slug>\`. **Không bao giờ** tạo thư mục vault trong repo code.
-2. Không tạo `.obsidian/` riêng — `E:\vault\` đã là 1 Obsidian vault.
+1. Vault sống ở `$VAULT_ROOT\<slug>\`. **Không bao giờ** tạo thư mục vault trong repo code.
+2. Không tạo `.obsidian/` riêng — `$VAULT_ROOT\` đã là 1 Obsidian vault.
 3. Link giữa note = **relative markdown**, không wikilink `[[...]]`.
 4. Một repo = một vault project. Repo khác của cùng sản phẩm → vault riêng, ghi rõ phân biệt ở hub note.
 5. Nội dung phải **đọc từ code thật**, không bịa. Mọi khẳng định kèm `file:line` khi có thể.
@@ -22,10 +22,10 @@ Dựng vault cho repo đang mở. Slug: `$1` nếu có, không thì suy ra từ 
 
 ### 1. Khảo sát
 
-- `E:\vault\_common\_common.md` + `E:\vault\_common\operations\vault-location.md` — convention.
-- `ls E:\vault` — đã có project nào; nếu `<slug>` tồn tại thì **update**, không ghi đè mù.
-- Một project sẵn có làm mẫu format (vd `E:\vault\cainz-wanqol-web-push\`).
-- `E:\vault\_common\templates\` — frontmatter chuẩn theo loại note.
+- `$VAULT_ROOT\_common\_common.md` + `$VAULT_ROOT\_common\operations\vault-location.md` — convention.
+- `ls $VAULT_ROOT` — đã có project nào; nếu `<slug>` tồn tại thì **update**, không ghi đè mù.
+- Một project sẵn có làm mẫu format (vd `$VAULT_ROOT\<an-existing-slug>\`).
+- `$VAULT_ROOT/_common/templates/` — frontmatter chuẩn theo loại note.
 
 ### 2. Đọc repo
 
@@ -36,10 +36,10 @@ Ghi lại lúc đọc: env var (kèm default), endpoint, bảng + trạng thái,
 ### 3. Scaffold
 
 ```
-E:\vault\<slug>\
+$VAULT_ROOT\<slug>\
   <Project Name> Vault.md    hub: Structure / Đọc khi vào project / In-repo references /
                              Conventions / Repo location / Stack quick reference
-  CLAUDE.md                  Layout / Common commands / Stack notes / Conventions / Known issues
+  AGENTS.md                  Layout / Common commands / Stack notes / Conventions / Known issues
                              + footer NAV:AUTO trỏ về hub
   audit/audit.md         decisions/decisions.md   memory/memory.md
   meta/meta.md           operations/operations.md org/org.md
@@ -63,9 +63,9 @@ Frontmatter mỗi note nội dung: `title`, `created`, `updated`, `tags`, `statu
 
 ### 5. Wiring
 
-- Copy `E:\vault\_common\hooks\cainz-wanqol-gate.ps1` → `<slug>-gate.ps1`; đổi `$*RepoPath` (đường dẫn repo), `$*EncodedDir` (path repo với `:`/`\` → `-`, vd `E--canz-wanqol-WanQol-WEB-PUSH`), và tên project truyền cho hook script ở dòng cuối.
-- Thêm gate vào `~/.claude/settings.json` đủ **4 event**: `SessionStart`, `UserPromptSubmit`, `PostToolUse`, `SessionEnd`.
-- Validate: `python -c "import json;json.load(open(r'C:\Users\User.HP\.claude\settings.json',encoding='utf-8'));print('OK')"`
+- Copy `$VAULT_ROOT\_common\hooks\<customer>-<product>-gate.ps1` → `<slug>-gate.ps1`; đổi `$*RepoPath` (đường dẫn repo), `$*EncodedDir` (path repo với `:`/`\` → `-`, vd `E--work-repos-Product-WEB-PUSH`), và tên project truyền cho hook script ở dòng cuối.
+- Thêm gate vào `{{AGENT_HOME}}/settings.json` đủ **4 event**: `SessionStart`, `UserPromptSubmit`, `PostToolUse`, `SessionEnd`.
+- Validate: `python -c "import json;json.load(open(r'{{AGENT_HOME}}/settings.json',encoding='utf-8'));print('OK')"`
 
 ### 6. Báo cáo
 
@@ -74,4 +74,4 @@ Liệt kê file đã tạo, và nêu riêng những phát hiện đáng lo lúc 
 ## Ghi chú
 
 - Repo đã có vault → chỉ cập nhật phần lệch, giữ nguyên `work/`, `memory/`, `decisions/` do người viết.
-- Không commit gì vào repo code. Vault `E:\vault\` là git repo riêng — chỉ commit khi người dùng yêu cầu.
+- Không commit gì vào repo code. Vault `$VAULT_ROOT\` là git repo riêng — chỉ commit khi người dùng yêu cầu.

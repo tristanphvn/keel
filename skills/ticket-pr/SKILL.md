@@ -9,7 +9,7 @@ Output goes straight into Jira / Linear / GitHub. A human reviewer reads it cold
 
 ## Step 1 — Pick the template, then READ it
 
-Templates live in `$VAULT_ROOT/_common/templates/` (fallback `E:\vault\_common\templates\`).
+Templates live in `$VAULT_ROOT/_common/templates/`.
 
 | Work type | Template | `kind:` |
 |---|---|---|

@@ -17,7 +17,7 @@ credentials.json
 *.secret
 secrets.*
 
-# --- Claude Code runtime state (machine-local, not architecture) ---
+# --- Agent runtime state (machine-local, not architecture) ---
 projects/
 sessions/
 session-env/

@@ -17,7 +17,7 @@
 - Use `workos.pipes.getAccessToken()` to get tokens — WorkOS auto-refreshes expired tokens. Never cache access tokens client-side.
 - Sandbox environments use "shared credentials" (WorkOS-managed OAuth apps). Production requires custom credentials configured per provider in the Dashboard.
 - Response is a discriminated union. **Node SDK** (camelCase): `{ active: true, accessToken }` on success or `{ active: false, error: "needs_reauthorization" | "not_installed" }` on failure. **Raw REST** uses snake_case (`access_token`). Branch on `active` first — `accessToken`/`error` only exist on their respective branches.
-- Provider slugs are lowercase (e.g., `github`, `slack`, `salesforce`). Claude tends to capitalize or use display names.
+- Provider slugs are lowercase (e.g., `github`, `slack`, `salesforce`). Coding agents tend to capitalize or use display names.
 - Connected account deletion removes stored tokens — the user must re-authorize. This is not reversible.
 - The Pipes Widget provides a pre-built UI for account connection — use it instead of building custom OAuth flows. Load via `workos-widgets` skill.
 - `getAccessToken()` requires `provider` and `userId` params. `organizationId` is optional but needed for org-scoped connections.

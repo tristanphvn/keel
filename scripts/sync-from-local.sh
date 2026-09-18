@@ -1,15 +1,19 @@
 #!/usr/bin/env bash
 # Pull the live machine config back into this repo (machine -> repo).
 #
-#   bash scripts/sync-from-local.sh            # dry run
-#   bash scripts/sync-from-local.sh --apply    # copies into the working tree
+#   AGENT_HOME=~/.your-agent bash scripts/sync-from-local.sh            # dry run
+#   AGENT_HOME=~/.your-agent bash scripts/sync-from-local.sh --apply    # copies into the working tree
 #
-# Writes only into the repo working tree. Never touches ~/.claude. Review with
-# `git diff` afterwards — this script does not stage, commit, or push.
+# The reverse of install.sh: absolute paths pointing at AGENT_HOME are folded
+# back into the literal token {{AGENT_HOME}}, so syncing never reintroduces
+# machine-specific paths into the repo.
+#
+# Writes only into the repo working tree. Never touches the agent config home.
+# Review with `git diff` afterwards — this script does not stage, commit, or push.
 set -uo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-SRC="${CLAUDE_HOME:-$HOME/.claude}"
+SRC="${AGENT_HOME:-$HOME/.agent}"
 APPLY=0
 [ "${1:-}" = "--apply" ] && APPLY=1
 
@@ -19,9 +23,12 @@ rules|rules
 skills|skills
 skill-registry|registry
 commands|commands
-CLAUDE.md|config/CLAUDE.md
+AGENTS.md|config/AGENTS.md
 learned-rules.md|config/learned-rules.md
 "
+
+# Print a machine file with the real path folded back to {{AGENT_HOME}}.
+unrender() { sed "s|$SRC|{{AGENT_HOME}}|g" "$1"; }
 
 echo "machine: $SRC"
 echo "repo:    $ROOT"
@@ -40,12 +47,12 @@ for pair in $PAIRS; do
       target="$dst/$rel"
       if [ ! -f "$target" ]; then
         echo "  NEW       ${pair#*|}/$rel"; changed=$((changed + 1))
-      elif ! cmp -s "$f" "$target"; then
+      elif ! unrender "$f" | cmp -s - "$target"; then
         echo "  UPDATED   ${pair#*|}/$rel"; changed=$((changed + 1))
       fi
       if [ "$APPLY" -eq 1 ]; then
         mkdir -p "$(dirname "$target")"
-        cp "$f" "$target"
+        unrender "$f" > "$target"
       fi
     done < <(find "$src" -type f)
 
@@ -57,10 +64,13 @@ for pair in $PAIRS; do
   else
     if [ ! -f "$dst" ]; then
       echo "  NEW       ${pair#*|}"; changed=$((changed + 1))
-    elif ! cmp -s "$src" "$dst"; then
+    elif ! unrender "$src" | cmp -s - "$dst"; then
       echo "  UPDATED   ${pair#*|}"; changed=$((changed + 1))
     fi
-    [ "$APPLY" -eq 1 ] && { mkdir -p "$(dirname "$dst")"; cp "$src" "$dst"; }
+    if [ "$APPLY" -eq 1 ]; then
+      mkdir -p "$(dirname "$dst")"
+      unrender "$src" > "$dst"
+    fi
   fi
 done
 

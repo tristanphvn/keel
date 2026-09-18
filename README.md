@@ -1,18 +1,26 @@
 # agent-skills
 
-Version control for my Claude Code global configuration: the always-on rules, the lazy-loaded skills, and the registry that manages their lifecycle.
+Version-controlled global configuration for a coding agent: the always-on rules, the lazy-loaded skills, and the registry that manages their lifecycle.
 
-The machine at `~/.claude/` stays the live system. This repo is a **mirror plus history** — it does not change how anything loads at runtime.
+Vendor-neutral by design. Nothing here is tied to one agent product — paths resolve through `AGENT_HOME`, and the entrypoint is a plain `AGENTS.md`. Point it at whichever agent you use.
+
+The configuration directory on your machine stays the live system. This repo is a **mirror plus history** — it does not change how anything loads at runtime.
+
+## AGENT_HOME
+
+Every path in this repo resolves against `AGENT_HOME`: the directory your coding agent reads its global configuration from. Set it to that directory; it defaults to `~/.agent`, which is a neutral placeholder rather than any particular product's location.
+
+Files that get installed carry the literal token `{{AGENT_HOME}}` wherever they need an absolute path. `install.sh` renders it to the real path on the way in, and `sync-from-local.sh` folds it back on the way out — so the repo never accumulates one machine's filesystem layout.
 
 ## Structure
 
 | Path | Mirrors | What it is |
 | --- | --- | --- |
-| `rules/` | `~/.claude/rules/` | Always-on behavior rules, split by concern, imported by `CLAUDE.md` |
-| `skills/` | `~/.claude/skills/` | Lazy-loaded skills, flat `<name>/SKILL.md` — the layout Claude Code discovers |
-| `registry/` | `~/.claude/skill-registry/` | Lifecycle metadata: ids, domains, status, dependencies, rule linkage |
-| `config/` | `~/.claude/CLAUDE.md`, `~/.claude/learned-rules.md` | The entrypoint that imports the rules, and the post-split redirect shim |
-| `commands/` | `~/.claude/commands/` | Slash commands. `setup-vault` is a documented dependency of the `vault-rules` skill |
+| `rules/` | `$AGENT_HOME/rules/` | Always-on behavior rules, split by concern, imported by `AGENTS.md` |
+| `skills/` | `$AGENT_HOME/skills/` | Lazy-loaded skills, flat `<name>/SKILL.md` — the layout the agent runtime discovers |
+| `registry/` | `$AGENT_HOME/skill-registry/` | Lifecycle metadata: ids, domains, status, dependencies, rule linkage |
+| `config/` | `$AGENT_HOME/AGENTS.md`, `$AGENT_HOME/learned-rules.md` | The entrypoint that imports the rules, and the post-split redirect shim |
+| `commands/` | `$AGENT_HOME/commands/` | Slash commands. `setup-vault` is a documented dependency of the `vault-rules` skill |
 | `docs/` | — | Architecture notes and the migration log |
 | `scripts/` | — | Install, sync, and validate helpers |
 
@@ -20,15 +28,15 @@ The machine at `~/.claude/` stays the live system. This repo is a **mirror plus 
 
 Three layers, deliberately separate:
 
-- **Rules — always on.** Every file in `rules/` is imported by `config/CLAUDE.md` and loads in every session. Short behavior statements, no procedures. 28 rule IDs across 10 families: `VERIFY-*`, `SCOPE-*`, `ROOT-*`, `CODE-*`, `TEST-*`, `API-*`, `REVIEW-*`, `CORRECTION-*`, `UI-*`, `CONSENSUS-*`. Each ID is defined exactly once.
-- **Skills — lazy.** Loaded only when the task matches. Multi-step workflows live here, never in rules. Runtime discovery requires the flat layout `~/.claude/skills/<name>/SKILL.md`, so the repo keeps that shape verbatim — **no domain subdirectories**, even though registry ids are domain-prefixed.
+- **Rules — always on.** Every file in `rules/` is imported by `config/AGENTS.md` and loads in every session. Short behavior statements, no procedures. 28 rule IDs across 10 families: `VERIFY-*`, `SCOPE-*`, `ROOT-*`, `CODE-*`, `TEST-*`, `API-*`, `REVIEW-*`, `CORRECTION-*`, `UI-*`, `CONSENSUS-*`. Each ID is defined exactly once.
+- **Skills — lazy.** Loaded only when the task matches. Multi-step workflows live here, never in rules. Runtime discovery requires the flat layout `$AGENT_HOME/skills/<name>/SKILL.md`, so the repo keeps that shape verbatim — **no domain subdirectories**, even though registry ids are domain-prefixed.
 - **Registry — management only.** `registry/registry.yaml` carries what `SKILL.md` frontmatter cannot: canonical id, domain, status, `depends_on`, and the `rules:` linkage back into `rules/`. `legacy_name` records the on-disk directory when it does not yet match the `<domain>-<skill-name>` convention.
 
 The id/directory split is intentional. Registry ids are the target names; most directories still carry their legacy names because migration is deliberate and done one skill at a time. `scripts/validate.sh` accepts both and tells you which is which.
 
 ## Source of data
 
-Everything under `rules/`, `skills/`, `registry/`, `config/`, and `commands/` was copied byte-for-byte from the live machine — not rewritten, not reformatted. Copy fidelity was verified by `sha256sum` before the first commit.
+Everything under `rules/`, `skills/`, `registry/`, `config/`, and `commands/` originates from a live machine configuration, copied rather than rewritten. The only systematic edits are neutralization: absolute machine paths replaced by `{{AGENT_HOME}}`, and product-specific naming replaced by vendor-neutral terms. Rule logic, skill behavior, constraints, and the validation mechanism are unchanged.
 
 `skills/workos/` and `skills/workos-widgets/` are **vendor skills**, externally maintained and refreshed by the WorkOS installer (`npx skills add workos/skills`). They are mirrored here so a restore is complete, but do not hand-edit them — the installer overwrites. `skills/.workos-skill-version` is their version marker.
 
@@ -37,9 +45,11 @@ Everything under `rules/`, `skills/`, `registry/`, `config/`, and `commands/` wa
 Scripts are bash; on Windows run them from Git Bash, or `bash scripts/<name>.sh` from PowerShell. Both directions default to a **dry run** and print exactly what would change.
 
 ```bash
+export AGENT_HOME=~/.your-agent-config-dir
+
 # repo -> machine (restore onto a new machine, or apply an update)
 bash scripts/install.sh              # preview
-bash scripts/install.sh --apply      # writes, after backing up to ~/.claude/backups/install-<timestamp>/
+bash scripts/install.sh --apply      # writes, after backing up to $AGENT_HOME/backups/install-<timestamp>/
 
 # machine -> repo (capture live edits before committing)
 bash scripts/sync-from-local.sh              # preview
@@ -47,9 +57,9 @@ bash scripts/sync-from-local.sh --apply      # copies into the working tree only
 git diff                                     # review before staging
 ```
 
-Neither script deletes. `install.sh` reports machine-only files and leaves them alone; `sync-from-local.sh` reports repo-only files so a rename does not leave a stale copy unnoticed. Override the target with `CLAUDE_HOME=/some/path`.
+Neither script deletes. `install.sh` reports machine-only files and leaves them alone; `sync-from-local.sh` reports repo-only files so a rename does not leave a stale copy unnoticed. Override the target with `AGENT_HOME=/some/path`.
 
-After `install.sh --apply`, restart Claude Code so the imports and the skill list reload.
+After `install.sh --apply`, restart your coding agent so the imports and the skill list reload.
 
 ## Validate
 
@@ -66,12 +76,15 @@ Read-only. Exits non-zero on failure. Checks:
 5. Every `status: active` registry entry resolves to a directory (by id or `legacy_name`); non-active entries must *not* have one.
 6. No orphan skill directories missing from the registry.
 7. Every rule ID referenced by the registry is actually defined in `rules/`.
-8. Every `@~/.claude/...` import in `config/CLAUDE.md` resolves inside the repo.
+8. Every `@{{AGENT_HOME}}/...` import in `config/AGENTS.md` resolves inside the repo.
+9. Portability — no tracked file hardcodes a home directory, a drive letter, or a single vendor's config directory, and installed files use the `{{AGENT_HOME}}` token rather than a shell variable.
 
-What it does **not** do: prove runtime discoverability. A skill is only confirmed live when a fresh Claude Code session lists it.
+What it does **not** do: prove runtime discoverability. A skill is only confirmed live when a fresh agent session lists it.
 
 ## What is deliberately not here
 
 Machine-local and private state, excluded by `.gitignore` and never copied: credentials and tokens, `.env` files, `logs/`, `backups/`, `projects/`, `sessions/`, `history.jsonl`, `file-history/`, `paste-cache/`, `plans/`, the `plugins/` cache, and `config.json` / `settings.local.json`, which carry machine paths and per-user permissions.
 
-This repo is private. `skills/vault-rules/` and `commands/setup-vault.md` reference client and project naming conventions; keep it that way.
+Also kept out of the tracked content: absolute developer paths, and customer or employer names in examples. Examples use placeholders such as `<customer>` and `<an-existing-slug>` so the instructions stay usable without carrying anyone's identity.
+
+`skills/vault-rules/` and `commands/setup-vault.md` describe a vault convention that lives outside any repo, addressed through `$VAULT_ROOT`. Set that variable to your own location; no default path is assumed.
