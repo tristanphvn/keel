@@ -278,7 +278,16 @@ if [ -f "$TARGET" ]; then
   echo "  backup:  $backup/CLAUDE.md (verified)"
 fi
 
+# mktemp creates 0600; moving it in would silently tighten the file's mode.
+# Capture the original and restore it after the move.
+mode=""
+[ -f "$TARGET" ] && mode="$(stat -f '%Lp' "$TARGET" 2>/dev/null || stat -c '%a' "$TARGET" 2>/dev/null)"
 mv -f "$tmp" "$TARGET" || { echo "FATAL: write failed" >&2; exit 1; }
+if [ -n "$mode" ]; then
+  chmod "$mode" "$TARGET" || echo "  warning: could not restore mode $mode on $TARGET" >&2
+else
+  chmod 644 "$TARGET" 2>/dev/null || true
+fi
 trap - EXIT; rm -f "$tmp.blk"
 echo "  written: $TARGET"
 echo
