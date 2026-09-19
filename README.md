@@ -16,13 +16,15 @@ Files that get installed carry the literal token `{{AGENT_HOME}}` wherever they 
 
 | Path | Mirrors | What it is |
 | --- | --- | --- |
-| `rules/` | `$AGENT_HOME/rules/` | Always-on behavior rules, split by concern, imported by `AGENTS.md` |
+| `rules/` | `$AGENT_HOME/rules/` | Always-on behavior rules, split by concern, imported by `AGENTS.md` (and auto-loaded directly by runtimes that scan the directory) |
 | `skills/` | `$AGENT_HOME/skills/` | Lazy-loaded skills, flat `<name>/SKILL.md` — the layout the agent runtime discovers |
 | `registry/` | `$AGENT_HOME/skill-registry/` | Lifecycle metadata: ids, domains, status, dependencies, rule linkage |
 | `config/` | `$AGENT_HOME/AGENTS.md`, `$AGENT_HOME/learned-rules.md` | The entrypoint that imports the rules, and the post-split redirect shim |
+| `config/claude/` | `$AGENT_HOME/CLAUDE.md` (a managed block) | Claude Code adapter: the one place a vendor assumption is allowed |
 | `commands/` | `$AGENT_HOME/commands/` | Slash commands. `setup-vault` is a documented dependency of the `vault-rules` skill |
 | `docs/` | — | Architecture notes and the migration log |
 | `scripts/` | — | Install, sync, and validate helpers |
+| `scripts/adapters/` | — | Per-runtime integration, run after `install.sh` |
 
 ## Architecture, unchanged
 
@@ -59,6 +61,27 @@ git diff                                     # review before staging
 
 Neither script deletes. `install.sh` reports machine-only files and leaves them alone; `sync-from-local.sh` reports repo-only files so a rename does not leave a stale copy unnoticed. Override the target with `AGENT_HOME=/some/path`.
 
+Both scripts exit non-zero if any write fails or is refused; a dry run writes nothing at all,
+not even a directory. `install.sh` backs up to `$AGENT_HOME/backups/install-<timestamp>/` and
+**verifies the backup** before the first write — including `CLAUDE.md`, `settings.json` and
+`hooks/`, which it never writes but an adapter might.
+
+### Runtime adapters
+
+`rules/`, `skills/`, `registry/` and `config/AGENTS.md` stay vendor-neutral. Anything true of
+exactly one runtime lives in an adapter:
+
+```bash
+AGENT_HOME=~/.claude bash scripts/adapters/claude.sh            # preview
+AGENT_HOME=~/.claude bash scripts/adapters/claude.sh --apply    # writes, after backing up CLAUDE.md
+AGENT_HOME=~/.claude bash scripts/adapters/claude.sh --check    # verify an installed setup
+AGENT_HOME=~/.claude bash scripts/adapters/claude.sh --remove   # reverse it exactly
+```
+
+Claude Code auto-loads `$AGENT_HOME/rules/*.md` and does **not** read `$AGENT_HOME/AGENTS.md`
+at user scope, so the adapter deliberately adds no rule imports — that would load every rule
+twice. See `config/claude/README.md` for how that was measured.
+
 After `install.sh --apply`, restart your coding agent so the imports and the skill list reload.
 
 ## Validate
@@ -69,15 +92,16 @@ bash scripts/validate.sh
 
 Read-only. Exits non-zero on failure. Checks:
 
-1. All seven rule files present.
+1. All eight rule files present.
 2. Rule IDs unique — no ID defined twice.
 3. All ten rule families present.
 4. Every skill's frontmatter opens on line 1, has a `description`, and its `name:` matches its directory.
 5. Every `status: active` registry entry resolves to a directory (by id or `legacy_name`); non-active entries must *not* have one.
 6. No orphan skill directories missing from the registry.
 7. Every rule ID referenced by the registry is actually defined in `rules/`.
-8. Every `@{{AGENT_HOME}}/...` import in `config/AGENTS.md` resolves inside the repo.
+8. Every `@{{AGENT_HOME}}/...` import in `config/AGENTS.md` resolves inside the repo — and the entrypoint imports *something*, and every `rules/*.md` on disk is imported by it. An entrypoint with its imports deleted used to pass this section vacuously.
 9. Portability — no tracked file hardcodes a home directory, a drive letter, or a single vendor's config directory, and installed files use the `{{AGENT_HOME}}` token rather than a shell variable.
+10. `registry/registry.yaml` and every `SKILL.md` frontmatter parse under a real YAML parser. `grep`/`awk` accept files PyYAML rejects, which is how an unquoted `{{AGENT_HOME}}` sat in the registry undetected.
 
 What it does **not** do: prove runtime discoverability. A skill is only confirmed live when a fresh agent session lists it.
 

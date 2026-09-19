@@ -60,3 +60,51 @@ Removed product-specific and developer-specific identity from the tracked conten
 Unchanged: all rule IDs and rule text, skill logic and constraints, registry structure, and checks 1–7.
 
 Two literal env var names (`CLAUDECODE`, `CLAUDE_CODE`) remain in the WorkOS vendor skill. They are strings that a third-party CLI inspects, listed alongside `CURSOR_AGENT` and `CODEX_SANDBOX`; renaming them would make the documentation factually wrong.
+
+## 2026-09-19 — installer safety, entrypoint routing, Claude Code adapter
+
+Repair pass before the first real install. Audit of `ed0c6e2` listed six defects; all six were
+reproduced at that commit, and one was corrected in the process.
+
+Installer and sync (`scripts/install.sh`, `scripts/sync-from-local.sh`):
+
+- dry run no longer creates directories — the one unguarded `mkdir -p` now sits under `--apply`
+- destination paths are no longer word-split: `PAIRS` holds destinations relative to `$AGENT_HOME`,
+  so spaces install correctly; `&`, `|` and `\` are escaped in the sed *replacement*
+- reverse sync no longer treats `$AGENT_HOME` as a regex — it is escaped as a BRE, so `.claude`
+  stops matching `Xclaude`
+- writes are atomic (render to a temp file, then move) and failures are counted; both scripts now
+  exit non-zero instead of printing "Applied." over a half-written tree
+- the backup is a precondition: it aborts on failure, covers `CLAUDE.md`/`settings.json`/`hooks/`,
+  and is verified against the source before the first write
+- `LC_ALL=C`, plus verbatim passthrough for files sed would treat as binary, so a non-UTF-8 file
+  can never be silently truncated to zero bytes
+- reverse sync refuses a source directory that is its own git checkout rather than ingesting its
+  object database into this repo
+
+Validation (`scripts/validate.sh`):
+
+- section 7 fails on an entrypoint with no imports, and on a `rules/*.md` that nothing imports
+- new section 9 parses `registry/registry.yaml` and every `SKILL.md` frontmatter with a real
+  YAML parser
+- the `$AGENT_HOME` check is scoped to files that are actually installed, so repo-only docs may
+  name the variable
+
+Configuration:
+
+- `registry/registry.yaml` `conventions.skill_path` is a folded block scalar. It was invalid YAML:
+  a plain scalar cannot open with `{`. Quoting would have broken on a Windows path (`\U` escape) or
+  an apostrophe; `>-` survives every rendered form.
+- the routing table moved out of `config/AGENTS.md` into `rules/70-routing.md`, imported back by
+  the entrypoint. Claude Code does not read a user-scope `AGENTS.md`, so routing was unreachable
+  there; as a rule file it loads on both runtimes from one source.
+- new `config/claude/` + `scripts/adapters/claude.sh`: a marker-delimited managed block in
+  `$AGENT_HOME/CLAUDE.md`, idempotent and exactly reversible, adding no rule imports because
+  Claude Code already auto-loads `rules/`.
+
+Unchanged: every rule ID and rule body, all skill logic and skill names, the registry structure,
+and checks 1–6.
+
+Result: `validate.sh` PASS. Verified in a sandbox — dry run writes nothing, `--apply` is
+idempotent, install→sync round trip is byte-identical, and all four hostile destination shapes
+(space, `&`, `|`, apostrophe) install cleanly.

@@ -1,0 +1,12 @@
+<!-- agent-skills:begin -->
+## Global rules and skills (agent-skills)
+
+Managed block — edit `config/claude/CLAUDE.md.block` in the agent-skills repo, not here.
+
+- Behavior rules live in `{{AGENT_HOME}}/rules/`. Claude Code loads every file there
+  automatically. Do not add import lines for them to this file: that loads each rule twice.
+- Skill inventory, ids, status and rule linkage: `{{AGENT_HOME}}/skill-registry/registry.yaml`.
+  Skills load lazily from `{{AGENT_HOME}}/skills/<name>/SKILL.md`, discovered one level deep.
+- `{{AGENT_HOME}}/AGENTS.md` is the entrypoint for other agents (Codex). Claude Code does
+  not read it at user scope, so nothing here depends on it.
+<!-- agent-skills:end -->
