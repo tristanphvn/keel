@@ -20,6 +20,12 @@ set -uo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DEST="${AGENT_HOME:-$HOME/.agent}"
+# The skills tree can be installed somewhere other than $AGENT_HOME/skills, for a
+# machine where that directory is already owned by something else (a separate
+# checkout, for instance). The runtime still has to SEE them at its own skills
+# path — an adapter links them into place. {{AGENT_HOME}} still renders to $DEST,
+# because the tokens inside skills point at rules/, skill-registry/ and logs/.
+SKILLS_DEST="${AGENT_SKILLS_DIR:-$DEST/skills}"
 APPLY=0
 [ "${1:-}" = "--apply" ] && APPLY=1
 
@@ -34,6 +40,11 @@ commands|commands
 config/AGENTS.md|AGENTS.md
 config/learned-rules.md|learned-rules.md
 "
+
+# Map a PAIRS destination (relative to $DEST) to its real absolute path.
+resolve_dst() {
+  if [ "$1" = "skills" ]; then printf '%s' "$SKILLS_DEST"; else printf '%s/%s' "$DEST" "$1"; fi
+}
 
 # Extra files backed up but never written by this script. They belong to the
 # machine, not the repo, and an adapter may edit them afterwards — so a restore
@@ -66,6 +77,7 @@ write_rendered() {
 
 echo "repo:        $ROOT"
 echo "destination: $DEST"
+[ "$SKILLS_DEST" = "$DEST/skills" ] || echo "skills:      $SKILLS_DEST (AGENT_SKILLS_DIR override)"
 [ "$APPLY" -eq 1 ] && echo "mode:        APPLY" || echo "mode:        DRY RUN (pass --apply to write)"
 echo
 
@@ -79,7 +91,7 @@ if [ "$APPLY" -eq 1 ]; then
   # adapter may touch. A failed backup aborts before any write.
   while IFS= read -r pair; do
     [ -z "$pair" ] && continue
-    dst="$DEST/${pair#*|}"
+    dst="$(resolve_dst "${pair#*|}")"
     [ -e "$dst" ] || continue
     cp -R "$dst" "$backup/" || { echo "FATAL: backup of $dst failed" >&2; exit 1; }
   done <<EOF
@@ -93,10 +105,10 @@ EOF
   # Verify the backup before trusting it: every backed-up path must compare equal.
   while IFS= read -r pair; do
     [ -z "$pair" ] && continue
-    rel="${pair#*|}"
-    [ -e "$DEST/$rel" ] || continue
-    diff -r "$DEST/$rel" "$backup/$(basename "$rel")" >/dev/null 2>&1 \
-      || { echo "FATAL: backup of $rel did not verify" >&2; exit 1; }
+    dst="$(resolve_dst "${pair#*|}")"
+    [ -e "$dst" ] || continue
+    diff -r "$dst" "$backup/$(basename "$dst")" >/dev/null 2>&1 \
+      || { echo "FATAL: backup of $dst did not verify" >&2; exit 1; }
   done <<EOF
 $PAIRS
 EOF
@@ -114,7 +126,7 @@ failed=0
 while IFS= read -r pair; do
   [ -z "$pair" ] && continue
   src="$ROOT/${pair%%|*}"
-  dst="$DEST/${pair#*|}"
+  dst="$(resolve_dst "${pair#*|}")"
   [ -e "$src" ] || { echo "skip (not in repo): ${pair%%|*}"; continue; }
 
   # A symlinked destination would move the write outside $AGENT_HOME.

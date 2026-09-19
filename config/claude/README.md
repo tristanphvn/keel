@@ -40,6 +40,19 @@ bash scripts/adapters/claude.sh --check    # verify an existing install
 bash scripts/adapters/claude.sh --remove   # take the managed block back out
 ```
 
+```bash
+bash scripts/adapters/claude.sh --link-skills --apply     # only when AGENT_SKILLS_DIR is set
+bash scripts/adapters/claude.sh --unlink-skills --apply
+```
+
 The adapter only ever touches `$AGENT_HOME/CLAUDE.md`, and only between its
 `<!-- agent-skills:begin -->` / `<!-- agent-skills:end -->` markers. Everything the user
-wrote in that file is preserved; re-running is idempotent.
+wrote in that file is preserved; re-running is idempotent. Claude Code strips HTML comments
+when it loads the file, so the markers cost the model nothing.
+
+## Symlinked skills
+
+Measured the same way: Claude Code **does** discover a skill whose directory under
+`$AGENT_HOME/skills/` is a symlink, and reads its `references/` through the link. That makes
+`AGENT_SKILLS_DIR` + `--link-skills` a safe way to keep the skills tree out of a config
+directory that already belongs to something else.

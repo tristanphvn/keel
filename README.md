@@ -82,6 +82,31 @@ Claude Code auto-loads `$AGENT_HOME/rules/*.md` and does **not** read `$AGENT_HO
 at user scope, so the adapter deliberately adds no rule imports — that would load every rule
 twice. See `config/claude/README.md` for how that was measured.
 
+### When `$AGENT_HOME/skills/` is already someone else's
+
+Set `AGENT_SKILLS_DIR` and the skills tree installs elsewhere; the adapter then links each
+skill into the directory the runtime actually scans. Claude Code follows symlinked skill
+directories, so discovery is unaffected.
+
+```bash
+export AGENT_HOME=~/.claude
+export AGENT_SKILLS_DIR=~/agent-skills/skills   # any directory outside $AGENT_HOME
+bash scripts/install.sh --apply
+bash scripts/adapters/claude.sh --link-skills --apply     # symlink them into $AGENT_HOME/skills
+bash scripts/adapters/claude.sh --unlink-skills --apply   # remove exactly those links
+```
+
+`--link-skills` refuses any destination that already exists — file, directory or foreign
+symlink — and never overwrites. It records every link it owns in `links.manifest` beside the
+skills tree, so `--unlink-skills` touches nothing else. If the destination directory is a
+separate git checkout, the links are added to its `.git/info/exclude`, which is local and
+untracked: that repo's `.gitignore` and every other tracked file are left alone. Note that a
+local exclude keeps the links out of `git status` and `git clean -fd`, but **not** out of
+`git clean -fdx`.
+
+`{{AGENT_HOME}}` still renders to `$AGENT_HOME`, not to the skills directory — the tokens
+inside skills point at `rules/`, `skill-registry/` and `logs/`, which stay in the config home.
+
 After `install.sh --apply`, restart your coding agent so the imports and the skill list reload.
 
 ## Validate
