@@ -147,3 +147,64 @@ No PR merged, no contract version bump, nothing marked stable or
 runtime-conformant, no M2 harness, and no Codex runtime claim. An empty-tool-list
 measurement and a genuine workspace-allocation probe are both still missing, and
 both are named as such rather than approximated.
+
+---
+
+## Follow-up: the two PR #5 review blockers
+
+Reviewed head `0be92f7`. Both reproduced against that source before any change.
+
+### Overrides bypassed authorization and the ceiling
+
+The override branch checked floor coverage and returned, so everything after it —
+the authorization check, the ceiling, the tool map — never ran. Reproduced:
+
+| Case | Before |
+| --- | --- |
+| `documentation` (floor `read`, ceiling `read, write`), authorized `[read]`, override `[Read, WebFetch]` | accepted; `WebFetch` carries `network`, outside both |
+| override `[Read, UnknownTool]` | accepted; the tool is absent from the map, so its classes are unknown |
+| override `[Read]` with no `permissions:` | accepted; an executable tool list with nothing authorizing it |
+
+Every executable path now passes through one gate. An override requires an
+explicit authorization, is validated as `floor ⊆ authorized ⊆ ceiling`, must name
+only tools the map describes, may not include a tool carrying a class outside the
+authorization, and must still cover the floor. A justification records why an
+operator narrowed the tools; it exempts nothing. All three cases now refuse with
+exit 2 and write nothing.
+
+The mapping's limit is stated where it is used: it constrains tool **names**
+before anything is written. It does not confine what a tool does once it runs — a
+shell authorized for `execute` can still write and reach the network. That is a
+runtime enforcement question, answered by capability evidence, not by this table.
+
+### "Non-executable" templates were installed as discoverable agents
+
+They were written to `agents/`, which both runtimes scan. A `NON-EXECUTABLE
+TEMPLATE` comment does not stop a runtime listing and dispatching a file.
+
+The split is now structural. Authorized roles are installed at
+`<target>/agents/<id>.<ext>`; unauthorized roles are written to
+`<target>/.agent-skills/templates/<runtime>/`, which no runtime scans, with a
+README stating why. The same rule applies to both adapters, and the manifest,
+`--check`, `--remove` and the delivery record (which now carries `executable`
+per role) all follow it.
+
+Transitions are the dangerous part, so they are explicit:
+
+- losing authorization removes the installed agent and writes the template
+  (`DEACTIVATE`); regaining it does the reverse (`PROMOTE`);
+- the old file is removed **only** when this renderer owns it and its digest
+  still matches;
+- a modified or unowned file is preserved, reported as `CONFLICT`, and the run
+  exits non-zero having written nothing. Claiming a deactivation that did not
+  happen would be worse than failing: the role would still be dispatchable.
+
+### Canonical positions carried forward
+
+Contract 0.3.0 stays draft. A probe of separate writable workspaces and
+independent writes belongs to `workspace-isolation` — no new vocabulary, and the
+capability stays `unmeasured` until such a probe exists. Filesystem confinement
+remains a separate property and is recorded as an observation; any vocabulary for
+it would be proposed on its own. Codex runtime behaviour is still unverified and
+no tool identifier was invented. No orchestration engine or conformance harness
+was added.

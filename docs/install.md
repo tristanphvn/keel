@@ -120,6 +120,12 @@ Renders the 14 canonical role profiles into agent definitions and binds the
 contract's logical model policies to concrete models. See [routing.md](routing.md).
 Installation does not require it.
 
+Only roles with an explicit authorized permission set are installed as active
+agents in `<target>/agents/`. The rest are written as templates under
+`<target>/.agent-skills/templates/<runtime>/`, which no runtime scans — a role
+the operator has not authorized is not merely labelled non-executable, it is not
+installed where anything could dispatch it.
+
 ## Runtime capability records
 
 ```bash

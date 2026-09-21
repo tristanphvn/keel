@@ -60,15 +60,22 @@ T="$(sandbox_new)"
 out="$(render_into "$R_ENF" "$T" --capabilities "$MEASURED" --runtime-version 2.1.220 --platform windows)"; rc=$?
 assert_eq "an enforced capability lets the role render" 0 "$rc"
 assert_file_exists "…and the role is written" "$T/agents/review.md"
-n="$(find "$T/agents" -name '*.md' | grep -c .)"
+# Rendered roles now land in one of two places: an authorized role is installed
+# as an agent, an unauthorized one is written as a template outside the
+# runtime's discovery path. The whole set is still rendered either way.
+n="$(find "$T/agents" "$T/.agent-skills/templates/claude" -name '*.md' \
+      ! -name README.md 2>/dev/null | grep -c .)"
 assert_eq "…along with the rest of the set" 14 "$n"
+assert_file_absent "…and an unauthorized role is not installed as an agent" "$T/agents/planning.md"
 
 # 10. a role requiring nothing still renders, with no record at all
 R_NONE="$(mkroot '')"
 T2="$(sandbox_new)"
 out="$(render_into "$R_NONE" "$T2")"; rc=$?
 assert_eq "a role requiring no capability renders without a record" 0 "$rc"
-assert_eq "…and the whole canonical set renders" 14 "$(find "$T2/agents" -name '*.md' | grep -c .)"
+assert_eq "…and the whole canonical set renders" 14 \
+  "$(find "$T2/agents" "$T2/.agent-skills/templates/claude" -name '*.md' \
+      ! -name README.md 2>/dev/null | grep -c .)"
 
 # 3. capability unmeasured -> refused
 T3="$(sandbox_new)"
