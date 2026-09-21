@@ -57,3 +57,7 @@ desktop.ini
 .idea/
 .vscode/
 *.swp
+
+# Adapter-owned local routing configuration (copy of models.example.yaml).
+# Machine-specific model bindings do not belong in the repository.
+config/routing/models.yaml

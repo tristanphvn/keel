@@ -1,78 +1,74 @@
-# Role-to-model routing — EXAMPLE. Copy to models.yaml and edit.
+# Adapter-owned routing configuration — EXAMPLE. Copy to models.yaml and edit.
 #
-# This file maps ROLE ids onto concrete provider/model identifiers per runtime.
-# It is the only place in the repository where a real model identifier appears.
+# The agent-work contract (0.2.0) defines LOGICAL model policies — `default` and
+# `escalated` — and deliberately defines no model names, providers, prices or
+# reasoning settings. This file is where those logical policies are bound to
+# concrete identifiers, per runtime. It is owned by the adapter, not by the
+# contract: changing a binding here changes no role profile and no skill body.
 #
-# What this file is NOT:
-#   * it does not define roles. Role profiles — what a role is for, and the
-#     instructions it carries — are canonical artifacts owned elsewhere. Here a
-#     role is an opaque id plus a pointer to its profile file.
-#   * it does not ship as an active default. Installation works with no routing
-#     file at all; routing is opt-in.
+# It holds no role definitions. Roles come from roles/catalog.json and the
+# roles/<id>.json profiles; there is exactly one role source.
 #
-# Model identifiers: put ONLY identifiers you have verified against the runtime
-# you are targeting. Informal names ("the light model", a marketing name) are
-# not API identifiers and will fail at spawn time, or silently fall back.
-#
-# Verification status of the values below is recorded in
-# docs/runtime-capabilities.md. Anything marked unverified there is an EXAMPLE,
-# not a recommendation.
+# A policy the catalog declares but this file does not bind is a configuration
+# error. The renderer stops. It never guesses a model name.
 
-version: 1
+version: 2
 
-# --- model selection ---------------------------------------------------------
-# Named tiers, so a role names a tier rather than pinning an identifier. Each
-# runtime resolves the tier its own way.
-catalog:
-  - tier: standard
+# --- logical policy -> concrete model ----------------------------------------
+policies:
+  default:
     claude:
-      model: sonnet          # CLI alias; resolved by Claude Code at spawn time
+      model: sonnet          # CLI alias, verified: resolves to claude-sonnet-5
     codex:
-      model: gpt-5.6         # EXAMPLE — verify against your Codex install
-  - tier: deep
+      model: gpt-5.6         # EXAMPLE — unverified here, the Codex CLI was not installed
+      reasoning: medium      # model_reasoning_effort: low | medium | high | xhigh
+  escalated:
     claude:
       model: opus
     codex:
-      model: gpt-5.6         # EXAMPLE
-  - tier: cheap
-    claude:
-      model: haiku
-    codex:
-      model: gpt-5.6         # EXAMPLE
+      model: gpt-5.6         # EXAMPLE — bind to the model you have verified
+      reasoning: high
 
-# --- reasoning settings ------------------------------------------------------
-# Kept separate from model selection on purpose: the same tier is used at
-# different reasoning depths, and the two runtimes express depth differently.
-#   claude: no per-agent reasoning key is documented — see capabilities matrix
-#   codex:  model_reasoning_effort = low | medium | high | xhigh
-reasoning:
-  default: medium
-  levels: [low, medium, high, xhigh]
+# Reasoning is bound per policy, not per model: the same model is used at
+# different depths. Claude Code documents no per-agent reasoning key, so none is
+# emitted there — see docs/runtime-capabilities.md rather than inventing one.
 
-# --- fallback policy ---------------------------------------------------------
-# Applied when a runtime cannot honour a role's request. Each step is tried in
-# order; `deny` means fail loudly rather than quietly running something else.
-fallback:
-  on_unknown_model: deny
-  on_missing_capability: [degrade_to_inline, deny]
-  # degrade_to_inline = run the role's instructions in the current session
-  # instead of a separate agent, and say so in the output.
-
-# --- roles -------------------------------------------------------------------
-# `profile` points at the canonical role profile. The renderer copies the
-# instructions from there verbatim; it never authors role instructions itself.
-# Until the canonical profiles exist, leave `roles` empty — the renderer will
-# report that there is nothing to render rather than inventing content.
-roles: []
-
-# Shape, once profiles exist:
+# --- per-role runtime options ------------------------------------------------
+# Optional. Keyed by the role ids in roles/catalog.json. Nothing here changes a
+# role's responsibilities, boundaries or criteria — only how the runtime is
+# configured to execute it.
 #
-# roles:
-#   - id: reviewer
-#     profile: profiles/reviewer.md      # relative to this file
-#     tier: deep
-#     reasoning: high
-#     claude:
-#       tools: [Read, Grep, Glob, Bash]  # omit to inherit the parent's tool set
-#     codex:
-#       sandbox_mode: read-only
+#   claude.tools     explicit tool allowlist. Omit to inherit the parent's set.
+#   codex.sandbox_mode   read-only | workspace-write
+#   skill_delivery   reference | preload — override the automatic choice
+#
+# Skill delivery, measured on Claude Code 2.1.220: an agent given an explicit
+# `tools` list without `Skill` has no Skill tool, and therefore receives no
+# skills at all. Where a role's tools are restricted, the renderer PRELOADS the
+# canonical skill bodies into the generated instructions instead of widening the
+# permission. The copies carry their source path, sha256 and revision.
+roles:
+  review:
+    claude:
+      tools: [Read, Grep, Glob, Bash]
+    codex:
+      sandbox_mode: read-only
+  security:
+    claude:
+      tools: [Read, Grep, Glob, Bash]
+    codex:
+      sandbox_mode: read-only
+  research:
+    claude:
+      tools: [Read, Grep, Glob, WebSearch, WebFetch]
+  critical-thinking:
+    claude:
+      tools: [Read, Grep, Glob]
+  documentation:
+    codex:
+      sandbox_mode: workspace-write
+
+# Escalation binding, for reference: a role whose profile carries
+# `model_policy_ref: escalated` resolves through policies.escalated above. The
+# contract's budget (one escalation per task by default) is enforced by the
+# orchestrator, not by this file — rendering a definition grants nothing.

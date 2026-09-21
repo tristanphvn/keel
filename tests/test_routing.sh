@@ -1,150 +1,156 @@
 #!/usr/bin/env bash
-# Role-to-model routing: schema validation, ownership, and the fallback policy.
+# Routing: rendering the canonical role set, policy binding, skill delivery,
+# instruction budget and output ownership.
 #
-# What is asserted here is what the renderer WRITES and REFUSES to write. That a
-# runtime then honours the rendered file is a separate, runtime-level claim —
-# recorded with its evidence in docs/runtime-capabilities.md.
+# What is asserted is what the renderer WRITES and REFUSES to write. That a
+# runtime then honours a rendered file is a separate claim, recorded with its
+# evidence in docs/runtime-capabilities.md.
 . "$(dirname "${BASH_SOURCE[0]}")/lib/harness.sh"
 
-FIX="$REPO_ROOT/tests/fixtures/routing"
 RENDER="python3 $REPO_ROOT/scripts/routing/render.py"
+CFG="$REPO_ROOT/config/routing/models.example.yaml"
+EXPECTED_ROLES=14
 
 if ! command -v python3 >/dev/null 2>&1; then
-  echo "    skip  python3 unavailable — routing renderer not exercised"
-  t_summary
-  exit $?
+  echo "    FAIL  python3 unavailable — the renderer cannot be exercised"
+  exit 1
 fi
 
-# --- renders both runtimes from one source ------------------------------------
+# --- the whole canonical role set renders -------------------------------------
 T="$(sandbox_new)"
-out="$($RENDER --runtime claude --config "$FIX/models.yaml" --target "$T" 2>&1)"; rc=$?
-assert_eq "dry run exits 0" 0 "$rc"
-assert_file_absent "dry run writes nothing" "$T/agents/reviewer.md"
-assert_contains "dry run names the resolved model" "$out" "model=opus"
-
-out="$($RENDER --runtime claude --config "$FIX/models.yaml" --target "$T" --apply 2>&1)"; rc=$?
+out="$($RENDER --runtime claude --target "$T" --config "$CFG" --apply 2>&1)"; rc=$?
 assert_eq "claude render exits 0" 0 "$rc"
-assert_file_exists "claude agent written" "$T/agents/reviewer.md"
-body="$(cat "$T/agents/reviewer.md")"
-assert_contains "…with the tier's model"      "$body" "model: opus"
-assert_contains "…with the restricted tools"  "$body" "tools: Read, Grep, Glob"
-assert_contains "…and the profile's instructions verbatim" "$body" "Report each finding as"
-# Claude Code documents no per-agent reasoning key; emitting one would be invention.
-assert_not_contains "no invented reasoning key in claude frontmatter" "$body" "reasoning:"
+n="$(find "$T/agents" -name '*.md' | grep -c .)"
+assert_eq "all $EXPECTED_ROLES canonical roles are rendered" "$EXPECTED_ROLES" "$n"
+assert_contains "…driven by the contract version" "$out" "contract: 0.2.0"
+for role in orchestrator planning review security documentation critical-thinking; do
+  assert_file_exists "role $role rendered" "$T/agents/$role.md"
+done
 
-out="$($RENDER --runtime codex --config "$FIX/models.yaml" --target "$T" --apply 2>&1)"; rc=$?
+T2="$(sandbox_new)"
+out="$($RENDER --runtime codex --target "$T2" --config "$CFG" --apply 2>&1)"; rc=$?
 assert_eq "codex render exits 0" 0 "$rc"
-body="$(cat "$T/agents/reviewer.toml")"
-assert_contains "codex model set"     "$body" 'model = "gpt-5.6"'
-assert_contains "codex reasoning set" "$body" 'model_reasoning_effort = "high"'
-assert_contains "codex sandbox set"   "$body" 'sandbox_mode = "read-only"'
-assert_contains "codex instructions carried over" "$body" "developer_instructions"
+n="$(find "$T2/agents" -name '*.toml' | grep -c .)"
+assert_eq "all $EXPECTED_ROLES roles render for codex too" "$EXPECTED_ROLES" "$n"
 
-# --- idempotent + check -------------------------------------------------------
-out="$($RENDER --runtime claude --config "$FIX/models.yaml" --target "$T" --apply 2>&1)"
+# --- contract content is carried into the instructions ------------------------
+body="$(cat "$T/agents/review.md")"
+assert_contains "purpose carried"            "$body" "Assess correctness and maintainability"
+assert_contains "responsibilities carried"   "$body" "## Responsibilities"
+assert_contains "boundaries carried"         "$body" "Do not edit implementation during review"
+assert_contains "inputs carried"             "$body" "## Inputs"
+assert_contains "outputs carried"            "$body" "## Outputs"
+assert_contains "completion criteria carried" "$body" "## Completion criteria"
+assert_contains "permission ceiling stated"  "$body" "Permission ceiling: read, write, execute"
+assert_contains "canonical skill refs kept"  "$body" "skills/review-code/SKILL.md"
+assert_contains "provenance recorded"        "$body" "source: roles/review.json"
+assert_contains "contract version recorded"  "$body" "contract 0.2.0"
+
+# --- model policy binding -----------------------------------------------------
+assert_contains "policy resolved to a configured model" "$body" "model: sonnet"
+assert_contains "…and the policy is named in provenance" "$body" "model policy: default -> sonnet"
+toml="$(cat "$T2/agents/review.toml")"
+assert_contains "codex model bound"      "$toml" 'model = "gpt-5.6"'
+assert_contains "codex reasoning bound"  "$toml" 'model_reasoning_effort = "medium"'
+assert_contains "codex sandbox bound"    "$toml" 'sandbox_mode = "read-only"'
+
+# --- skill delivery under tool restrictions -----------------------------------
+# Measured: a Claude sub-agent given an explicit tools list without `Skill` has
+# no Skill tool, so referencing a skill would deliver nothing. The renderer
+# preloads the canonical body instead of widening the permission.
+assert_contains "restricted role declares its tool limit" "$body" "tools: Read, Grep, Glob, Bash"
+assert_contains "…and preloads its skills"                "$body" "skill delivery: preload"
+assert_contains "…with the canonical body inlined"        "$body" "begin canonical skill: skills/review-code/SKILL.md"
+assert_contains "…traceable by hash"                      "$body" "sha256="
+n_inlined="$(grep -c 'begin canonical skill' "$T/agents/review.md")"
+assert_eq "every declared skill is delivered" 2 "$n_inlined"
+
+plain="$(cat "$T/agents/planning.md")"
+assert_contains "an unrestricted role keeps its Skill tool" "$plain" "skill delivery: reference"
+assert_not_contains "…and is not bloated with inlined copies" "$plain" "begin canonical skill"
+
+# --- unresolved policies and bad contracts are configuration errors -----------
+E="$(sandbox_new)"
+printf 'version: 2\npolicies:\n  default:\n    claude:\n      model: sonnet\n' > "$E/partial.yaml"
+out="$($RENDER --runtime claude --target "$E" --config "$E/partial.yaml" --apply 2>&1)"; rc=$?
+assert_eq "an unbound policy is a configuration error" 2 "$rc"
+assert_contains "…naming the missing binding" "$out" "escalated"
+assert_contains "…and refusing to guess"      "$out" "no model is guessed"
+
+printf 'version: 1\npolicies:\n  default:\n    claude:\n      model: sonnet\n' > "$E/v1.yaml"
+out="$($RENDER --runtime claude --target "$E" --config "$E/v1.yaml" --apply 2>&1)"; rc=$?
+assert_eq "an old routing schema version is rejected" 2 "$rc"
+
+out="$($RENDER --runtime claude --target "$E" --config "$E/absent.yaml" --apply 2>&1)"; rc=$?
+assert_eq "a missing routing file is a configuration error" 2 "$rc"
+assert_contains "…explaining that the contract defines no model names" "$out" "no model names"
+
+# --- a mutated distribution root ----------------------------------------------
+R="$(sandbox_new)/root"
+mkdir -p "$R"
+cp -r "$REPO_ROOT/roles" "$REPO_ROOT/contracts" "$REPO_ROOT/skills" "$REPO_ROOT/rules" "$R/"
+
+python3 -c "
+import json,sys
+p=sys.argv[1]+'/roles/catalog.json'
+d=json.load(open(p,encoding='utf-8')); d['contract_version']='0.3.0'
+json.dump(d,open(p,'w',encoding='utf-8'))" "$R"
+out="$($RENDER --runtime claude --target "$E" --root "$R" --config "$CFG" --apply 2>&1)"; rc=$?
+assert_eq "an unsupported contract version is rejected" 2 "$rc"
+assert_contains "…without reinterpreting it" "$out" "will not reinterpret"
+
+python3 -c "
+import json,sys
+p=sys.argv[1]+'/roles/catalog.json'
+d=json.load(open(p,encoding='utf-8')); d['contract_version']='0.2.0'
+json.dump(d,open(p,'w',encoding='utf-8'))
+p=sys.argv[1]+'/roles/review.json'
+d=json.load(open(p,encoding='utf-8')); d['skill_refs']=['skills/not-a-real-skill/SKILL.md']
+json.dump(d,open(p,'w',encoding='utf-8'))" "$R"
+out="$($RENDER --runtime claude --target "$E" --root "$R" --config "$CFG" --apply 2>&1)"; rc=$?
+assert_eq "a missing skill reference is rejected" 2 "$rc"
+assert_contains "…and named" "$out" "does not exist"
+
+python3 -c "
+import json,sys
+p=sys.argv[1]+'/roles/review.json'
+d=json.load(open(p,encoding='utf-8')); d['skill_refs']=['../../etc/passwd']
+json.dump(d,open(p,'w',encoding='utf-8'))" "$R"
+out="$($RENDER --runtime claude --target "$E" --root "$R" --config "$CFG" --apply 2>&1)"; rc=$?
+assert_eq "a traversing reference is rejected" 2 "$rc"
+assert_contains "…as a containment failure" "$out" "no traversal"
+
+# --- the instruction budget is never silently exceeded ------------------------
+B="$(sandbox_new)"
+sed 's/^  review:$/  review:\n    skill_delivery: preload/' "$CFG" > "$B/preload.yaml"
+out="$($RENDER --runtime codex --target "$B" --config "$B/preload.yaml" --budget 4096 --apply 2>&1)"; rc=$?
+assert_eq "an over-budget role fails the run" 2 "$rc"
+assert_contains "…naming the limit"          "$out" "instruction budget"
+assert_contains "…and refusing truncation"   "$out" "never truncated"
+assert_file_absent "…having written nothing" "$B/agents/review.toml"
+
+# --- idempotency, drift and ownership -----------------------------------------
+out="$($RENDER --runtime claude --target "$T" --config "$CFG" --apply 2>&1)"
 assert_contains "re-render is a no-op" "$out" "unchanged"
-out="$($RENDER --runtime claude --config "$FIX/models.yaml" --target "$T" --check 2>&1)"; rc=$?
+out="$($RENDER --runtime claude --target "$T" --config "$CFG" --check 2>&1)"; rc=$?
 assert_eq "check passes on a fresh render" 0 "$rc"
 
-printf '\nedited by hand\n' >> "$T/agents/reviewer.md"
-out="$($RENDER --runtime claude --config "$FIX/models.yaml" --target "$T" --check 2>&1)"; rc=$?
-assert_ne "check fails when the rendered file drifted" 0 "$rc"
+printf '\nedited by hand\n' >> "$T/agents/review.md"
+out="$($RENDER --runtime claude --target "$T" --config "$CFG" --check 2>&1)"; rc=$?
+assert_ne "check fails once a rendered file drifts" 0 "$rc"
 assert_contains "…and says it is stale" "$out" "stale"
 
-# --- ownership ----------------------------------------------------------------
-# A file the renderer did not write is never overwritten, even at the same path.
-T2="$(sandbox_new)"
-mkdir -p "$T2/agents"
-printf 'my own agent\n' > "$T2/agents/reviewer.md"
-out="$($RENDER --runtime claude --config "$FIX/models.yaml" --target "$T2" --apply 2>&1)"; rc=$?
-assert_ne "collision fails the run" 0 "$rc"
+C="$(sandbox_new)"
+mkdir -p "$C/agents"
+printf 'my own agent\n' > "$C/agents/review.md"
+out="$($RENDER --runtime claude --target "$C" --config "$CFG" --apply 2>&1)"; rc=$?
+assert_ne "a collision fails the run" 0 "$rc"
 assert_contains "…and is reported" "$out" "COLLISION"
-assert_eq "…and the user's file is untouched" "my own agent" "$(cat "$T2/agents/reviewer.md")"
+assert_eq "…and the user's file is untouched" "my own agent" "$(cat "$C/agents/review.md")"
 
-# --- removal removes only what it owns ----------------------------------------
-out="$($RENDER --runtime claude --config "$FIX/models.yaml" --target "$T" --remove --apply 2>&1)"
-assert_contains "modified file is kept on removal" "$out" "KEPT (modified since render)"
-assert_file_exists "…and still on disk" "$T/agents/reviewer.md"
-out="$($RENDER --runtime codex --config "$FIX/models.yaml" --target "$T" --remove --apply 2>&1)"
-assert_file_absent "unmodified rendered file is removed" "$T/agents/reviewer.toml"
-
-# --- routing is optional ------------------------------------------------------
-T3="$(sandbox_new)"
-out="$($RENDER --runtime claude --config "$T3/absent.yaml" --target "$T3" --apply 2>&1)"; rc=$?
-assert_eq "a missing routing file is not an error" 0 "$rc"
-assert_contains "…and says routing is optional" "$out" "routing is optional"
-
-# --- schema errors are fatal, never guessed -----------------------------------
-mkerr() { printf '%s\n' "$2" > "$1"; }
-
-E="$(sandbox_new)"
-mkerr "$E/no-profile.yaml" 'version: 1
-catalog:
-  - tier: deep
-    claude:
-      model: opus
-roles:
-  - id: reviewer
-    tier: deep'
-out="$($RENDER --runtime claude --config "$E/no-profile.yaml" --target "$E" --apply 2>&1)"; rc=$?
-assert_eq "a role without a profile is a schema error" 2 "$rc"
-assert_contains "…and says routing never authors instructions" "$out" "never authors instructions"
-
-# Profile paths are relative to the config file: an absolute POSIX path written
-# inside a config is not argv-converted on Windows, so it would not resolve.
-mkdir -p "$E/profiles"
-cp "$FIX/profiles/reviewer.md" "$E/profiles/reviewer.md"
-
-mkerr "$E/unknown-tier.yaml" 'version: 1
-catalog:
-  - tier: deep
-    claude:
-      model: opus
-fallback:
-  on_unknown_model: deny
-roles:
-  - id: reviewer
-    profile: profiles/reviewer.md
-    tier: nonexistent'
-out="$($RENDER --runtime claude --config "$E/unknown-tier.yaml" --target "$E" --apply 2>&1)"; rc=$?
-assert_eq "an unknown tier is a schema error under deny" 2 "$rc"
-assert_contains "…and refuses to substitute silently" "$out" "silent substitution"
-
-mkerr "$E/bad-reasoning.yaml" 'version: 1
-catalog:
-  - tier: deep
-    codex:
-      model: gpt-5.6
-reasoning:
-  default: medium
-  levels: [low, medium, high, xhigh]
-roles:
-  - id: reviewer
-    profile: profiles/reviewer.md
-    tier: deep
-    reasoning: ultra-max'
-out="$($RENDER --runtime codex --config "$E/bad-reasoning.yaml" --target "$E" --apply 2>&1)"; rc=$?
-assert_eq "an out-of-range reasoning level is a schema error" 2 "$rc"
-
-mkerr "$E/bad-version.yaml" 'version: 99
-roles: []'
-out="$($RENDER --runtime claude --config "$E/bad-version.yaml" --target "$E" --apply 2>&1)"; rc=$?
-assert_eq "an unsupported schema version is fatal" 2 "$rc"
-
-# A profile with no description must not be papered over with a generated one.
-mkdir -p "$E/profiles"
-printf -- '---\nname: x\n---\n\nbody\n' > "$E/profiles/nodesc.md"
-mkerr "$E/nodesc.yaml" 'version: 1
-catalog:
-  - tier: deep
-    claude:
-      model: opus
-roles:
-  - id: reviewer
-    profile: profiles/nodesc.md
-    tier: deep'
-out="$($RENDER --runtime claude --config "$E/nodesc.yaml" --target "$E" --apply 2>&1)"; rc=$?
-assert_eq "a profile without a description is fatal" 2 "$rc"
-assert_contains "…and refuses to invent one" "$out" "will not invent"
+out="$($RENDER --runtime claude --target "$T" --config "$CFG" --remove --apply 2>&1)"
+assert_contains "the edited file is kept on removal" "$out" "KEPT (modified since render)"
+assert_file_exists "…and still on disk"              "$T/agents/review.md"
+assert_file_absent "an unmodified rendered file is removed" "$T/agents/planning.md"
 
 t_summary
