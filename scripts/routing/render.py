@@ -395,33 +395,68 @@ def authorized_permissions(role, cfg, opts, entry):
     return None
 
 
+def check_authorization(role, granted, floor, ceiling, tool_map, runtime):
+    """Validate an authorized permission set. Fatal on any violation.
+
+    One gate, used by every executable path. The override branch used to return
+    before reaching it, so an operator override could name tools carrying
+    permissions the role was never authorized for and never allowed to hold.
+    """
+    granted_set = set(granted)
+    unknown = sorted(granted_set - set(PERMISSION_CLASSES))
+    if unknown:
+        die(2, "role %s: unknown permission class(es) %s" % (role["id"], ", ".join(unknown)))
+
+    # floor <= authorized <= ceiling, the same inequality the contract states.
+    unmet = sorted(floor - granted_set)
+    if unmet:
+        die(2, "role %s: the authorized permissions %s do not meet its floor; %s missing. "
+               "A role cannot discharge its responsibility below its floor - grant them "
+               "or do not dispatch this role."
+               % (role["id"], ", ".join(sorted(granted_set)) or "(none)", ", ".join(unmet)))
+    excess = sorted(granted_set - ceiling)
+    if excess:
+        die(2, "role %s: the authorized permissions exceed its ceiling by %s. The ceiling "
+               "is a bound on what the role may ever be granted."
+               % (role["id"], ", ".join(excess)))
+
+    if not tool_map:
+        die(2, "role %s: the %s tool_map is empty, so no authorized permission can be "
+               "mapped to a tool and no tool can be checked against the authorization. "
+               "Declare the map, or leave the role unauthorized."
+               % (role["id"], runtime))
+    return granted_set
+
+
 def effective_tools(role, cfg, rid, runtime):
     """(tools, origin, note) for a role.
 
-    tools is None only for a template: a file explicitly marked non-executable.
-    Otherwise it is a concrete list, possibly empty.
+    tools is None only for a template: a configuration that is deliberately not
+    executable and is not installed where a runtime would discover it.
 
     Origins, all distinguishable in the generated file:
 
       authorized  derived from an explicit authorized permission set through the
-                  adapter's tool_map. The floor is checked as a minimum and the
-                  ceiling as a bound; the set may sit anywhere between them.
-      adapter     an explicit tools_override. Still checked against the floor —
-                  a justification does not exempt an override from the contract.
+                  adapter's tool_map. floor - authorized - ceiling, checked.
+      adapter     an explicit tools_override, which still requires authorization
+                  and is checked tool by tool against it. A justification records
+                  why an operator narrowed the set; it exempts nothing.
       template    no authorization context was supplied, so no executable
-                  configuration is produced. The contract allows a template; it
-                  does not allow claiming an authorized, restricted execution
-                  from a profile alone, and an agent file with no tool limit
-                  inherits whatever the parent has.
+                  configuration is produced.
+
+    What the mapping does and does not establish: it says which permission
+    classes a tool NAME is declared to carry, so a tool outside the authorized
+    classes can be refused before anything is written. It does not confine what
+    a tool does once it runs. A general-purpose shell authorized for `execute`
+    can still write files and reach the network; only the runtime can prevent
+    that, and whether it does is a capability question answered by evidence, not
+    by this table.
     """
     entry, opts = role_options(cfg, rid, runtime)
     floor = set(role.get("required_permissions") or [])
     ceiling = set(role.get("permission_ceiling") or [])
     tool_map = (cfg.get("tool_map") or {}).get(runtime) or {}
 
-    # `tools_override` present but empty is a decision, not an absence: it means
-    # no tools. Previously an empty list was falsy and fell through to inherited
-    # or floor-derived tools — the opposite of what the operator wrote.
     if "tools_override" in opts:
         override = opts.get("tools_override")
         if not isinstance(override, list):
@@ -436,11 +471,40 @@ def effective_tools(role, cfg, rid, runtime):
                    "renderer will not emit it. Measure it and record the evidence, or "
                    "remove the override. It is never treated as inherited tools."
                    % (role["id"], runtime))
-        if floor and not tool_map:
-            die(2, "role %s: tools_override cannot be checked against the role's floor "
-                   "because the %s tool_map is empty, so which classes those tools cover "
-                   "is unknown. Declare the map, or do not override."
-                   % (role["id"], runtime))
+
+        # An override is an executable configuration, so it needs the same
+        # authorization as any other - a justification is a record of an operator
+        # decision, not a substitute for being allowed to make it.
+        granted = authorized_permissions(role, cfg, opts, entry)
+        if granted is None:
+            die(2, "role %s: tools_override produces an executable configuration, so it "
+                   "requires an explicit authorized permission set. A justification "
+                   "records why an operator narrowed the tools; it does not authorize "
+                   "the role. Add `permissions:` or remove the override."
+                   % role["id"])
+        granted_set = check_authorization(role, granted, floor, ceiling, tool_map, runtime)
+
+        # Every overridden tool must be known to the map, and must not carry a
+        # permission class outside the authorization (hence outside the ceiling).
+        unmapped = [t for t in override if not classes_for_tools(tool_map, [t])]
+        if unmapped:
+            die(2, "role %s: tools_override names %s, which the %s tool_map does not "
+                   "describe, so which permission class(es) they carry is unknown. An "
+                   "unmapped tool cannot be checked against the authorization."
+                   % (role["id"], ", ".join(sorted(unmapped)), runtime))
+
+        violations = []
+        for tool in override:
+            carried = classes_for_tools(tool_map, [tool])
+            outside = sorted(carried - granted_set)
+            if outside:
+                violations.append("%s carries %s" % (tool, ", ".join(outside)))
+        if violations:
+            die(2, "role %s: tools_override reaches outside its authorized permissions "
+                   "[%s]: %s. The authorization and the ceiling bound an override exactly "
+                   "as they bound a derived list, justified or not."
+                   % (role["id"], ",".join(sorted(granted_set)), "; ".join(violations)))
+
         covered = classes_for_tools(tool_map, override)
         unmet = sorted(floor - covered)
         if unmet:
@@ -454,23 +518,7 @@ def effective_tools(role, cfg, rid, runtime):
     if granted is None:
         return None, "template", ""
 
-    granted_set = set(granted)
-    unknown = sorted(granted_set - set(PERMISSION_CLASSES))
-    if unknown:
-        die(2, "role %s: unknown permission class(es) %s" % (role["id"], ", ".join(unknown)))
-
-    # floor <= authorized <= ceiling, the same inequality the contract states.
-    unmet = sorted(floor - granted_set)
-    if unmet:
-        die(2, "role %s: the authorized permissions %s do not meet its floor; %s missing. "
-               "A role cannot discharge its responsibility below its floor — grant them "
-               "or do not dispatch this role."
-               % (role["id"], ", ".join(sorted(granted_set)) or "(none)", ", ".join(unmet)))
-    excess = sorted(granted_set - ceiling)
-    if excess:
-        die(2, "role %s: the authorized permissions exceed its ceiling by %s. The ceiling "
-               "is a bound on what the role may ever be granted."
-               % (role["id"], ", ".join(excess)))
+    granted_set = check_authorization(role, granted, floor, ceiling, tool_map, runtime)
 
     missing = [c for c in sorted(granted_set) if not tool_map.get(c)]
     if missing:
@@ -803,6 +851,45 @@ def check_capabilities(roles, record, runtime, version, platform):
     return failures
 
 
+# --- where a rendered role is stored -----------------------------------------
+# Both runtimes auto-discover agent definitions in <config>/agents. A template is
+# not an authorized configuration, so it must not live there: a comment saying
+# NON-EXECUTABLE does not stop a runtime from listing and dispatching the file.
+# Templates go under .agent-skills/templates/<runtime>/, which neither runtime
+# scans, and which already holds this adapter's own bookkeeping.
+
+TEMPLATE_DIRNAME = os.path.join(".agent-skills", "templates")
+
+
+def active_dir(target):
+    return os.path.join(target, "agents")
+
+
+def template_dir(target, runtime):
+    return os.path.join(target, TEMPLATE_DIRNAME, runtime)
+
+
+def output_paths(target, runtime, rid, ext, executable):
+    """(where this role belongs, where it must NOT be) for this render."""
+    active = os.path.join(active_dir(target), rid + ext)
+    template = os.path.join(template_dir(target, runtime), rid + ext)
+    return (active, template) if executable else (template, active)
+
+
+TEMPLATE_README = """# Non-executable role templates
+
+Rendered from canonical role profiles that carry no authorized permission set.
+
+They are kept here, and deliberately not in `agents/`, because a runtime
+discovers and dispatches whatever it finds in its agents directory. A comment
+inside a file does not prevent that; a different directory does.
+
+To make a role executable, authorize it in the routing configuration and
+re-render. The renderer then writes it to `agents/` and removes the template it
+owns here. Nothing in this directory is loaded by any runtime.
+"""
+
+
 def delivery_record(roles, cfg, runtime, revision):
     """What this render delivered, per role, for a result's `delivered_skills`.
 
@@ -819,10 +906,16 @@ def delivery_record(roles, cfg, runtime, revision):
         entry, opts = role_options(cfg, role["id"], runtime)
         tools, _origin, _just = effective_tools(role, cfg, role["id"], runtime)
         delivery, _why = decide_delivery(role, entry, tools, runtime)
-        out["roles"][role["id"]] = [
-            {"ref": s["ref"], "sha256": s["sha256"], "method": delivery}
-            for s in role["_skills"]
-        ]
+        out["roles"][role["id"]] = {
+            # An unauthorized role is rendered as a template and is not installed
+            # where the runtime looks, so a consumer of this record can tell what
+            # was actually made dispatchable.
+            "executable": tools is not None,
+            "skills": [
+                {"ref": s["ref"], "sha256": s["sha256"], "method": delivery}
+                for s in role["_skills"]
+            ],
+        }
     return json.dumps(out, indent=2, sort_keys=True) + "\n"
 
 # Codex reads the instruction chain up to project_doc_max_bytes (32 KiB default).
@@ -890,7 +983,9 @@ def main(argv):
     mode = "check" if args.check else ("remove" if args.remove else "render")
     print("runtime:  %s" % args.runtime)
     print("root:     %s" % root)
-    print("target:   %s" % outdir)
+    print("target:   %s" % active_dir(target))
+    print("templates: %s  (unauthorized roles; not installed)"
+          % template_dir(target, args.runtime))
     print("mode:     %s%s" % (mode, "" if args.check else (" (apply)" if args.apply else " (dry run)")))
     print("")
 
@@ -943,8 +1038,11 @@ def main(argv):
                "measured record, or measure the capability." % len(set(f[0] for f in cap_failures)))
 
     rendered = {}
+    executable = {}
     oversize = []
     for role in roles:
+        _tools, _origin, _note = effective_tools(role, cfg, role["id"], args.runtime)
+        executable[role["id"]] = _tools is not None
         content = renderer(role, catalog, cfg, revision)
         size = len(content.encode("utf-8"))
         if budget and size > budget:
@@ -962,23 +1060,72 @@ def main(argv):
     if args.check:
         problems = 0
         for rid, content in sorted(rendered.items()):
-            path = os.path.join(outdir, rid + ext)
+            path, other = output_paths(target, args.runtime, rid, ext, executable[rid])
             if not os.path.isfile(path):
                 print("  FAIL  %s not rendered" % path); problems += 1; continue
             if read_text(path) != content:
                 print("  FAIL  %s is stale" % path); problems += 1; continue
             if path not in owned:
                 print("  FAIL  %s is not in the routing manifest" % path); problems += 1; continue
-            print("  ok    %s" % path)
+            # A leftover at the other location is the dangerous case: an
+            # unauthorized role whose old executable copy is still discoverable.
+            if os.path.exists(other):
+                where = "still discoverable at" if not executable[rid] else "shadowed by a template at"
+                print("  FAIL  %s is %s %s" % (rid, where, other)); problems += 1; continue
+            print("  ok    %s%s" % (path, "" if executable[rid] else "  (template, not installed)"))
         print("\nROUTING CHECK: %s" % ("PASS" if problems == 0 else "FAIL (%d)" % problems))
         return 0 if problems == 0 else 1
 
     # --- render ---------------------------------------------------------------
-    collisions = written = unchanged = 0
-    entries = dict(owned)
+    # A role that changes side must not leave its old file behind: an executable
+    # that becomes a template would otherwise stay discoverable and dispatchable.
+    # The old file is removed only when this renderer owns it AND its digest still
+    # matches what was written. Anything else is someone's edit or someone else's
+    # file: it is preserved, reported, and the run refuses rather than claiming a
+    # deactivation that did not happen.
+    stale_conflicts = []
+    migrations = []
     for role in roles:
         rid = role["id"]
-        path = os.path.join(outdir, rid + ext)
+        _path, other = output_paths(target, args.runtime, rid, ext, executable[rid])
+        if not os.path.exists(other):
+            continue
+        direction = "deactivate" if not executable[rid] else "promote"
+        if other not in owned:
+            stale_conflicts.append((rid, other, "not written by this renderer"))
+        elif sha256_file(other) != owned[other]:
+            stale_conflicts.append((rid, other, "modified since it was rendered"))
+        else:
+            migrations.append((rid, other, direction))
+
+    if stale_conflicts:
+        for rid, path, why in stale_conflicts:
+            sys.stderr.write("  CONFLICT role %s: %s exists and is %s\n" % (rid, path, why))
+        sys.stderr.write(
+            "  These files were NOT removed and the role was NOT deactivated. An\n"
+            "  unauthorized role whose executable definition is still in place stays\n"
+            "  discoverable by the runtime. Resolve each file, then re-run.\n")
+        die(1, "%d stale agent file(s) could not be safely removed. Nothing was written."
+               % len(stale_conflicts))
+
+    collisions = written = unchanged = 0
+    entries = dict(owned)
+
+    for rid, old_path, direction in migrations:
+        verb = "DEACTIVATE" if direction == "deactivate" else "PROMOTE   "
+        print("  %s %s (removing %s)" % (verb, rid, old_path))
+        if args.apply:
+            os.remove(old_path)
+            entries.pop(old_path, None)
+
+    if args.apply and any(not executable[r["id"]] for r in roles):
+        readme = os.path.join(template_dir(target, args.runtime), "README.md")
+        write_text(readme, TEMPLATE_README)
+        entries[readme] = sha256_file(readme)
+
+    for role in roles:
+        rid = role["id"]
+        path, _other = output_paths(target, args.runtime, rid, ext, executable[rid])
         content = rendered[rid]
         if os.path.exists(path) and path not in owned:
             print("  COLLISION %s exists and is not ours — not overwriting" % path)
@@ -991,9 +1138,10 @@ def main(argv):
             continue
         policy = role["model_policy_ref"]
         model = cfg["policies"][policy][args.runtime]["model"]
-        print("  %s %s  policy=%s model=%s %dB" % (
+        print("  %s %s  policy=%s model=%s %dB %s" % (
             "WRITE   " if not os.path.exists(path) else "UPDATE  ",
-            rid + ext, policy, model, len(content.encode("utf-8"))))
+            rid + ext, policy, model, len(content.encode("utf-8")),
+            "-> agents/" if executable[rid] else "-> template (not installed)"))
         written += 1
         if args.apply:
             write_text(path, content)

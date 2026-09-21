@@ -20,17 +20,18 @@ fi
 T="$(sandbox_new)"
 out="$($RENDER --runtime claude --target "$T" --config "$CFG" --apply 2>&1)"; rc=$?
 assert_eq "claude render exits 0" 0 "$rc"
-n="$(find "$T/agents" -name '*.md' | grep -c .)"
+n="$(find "$T/agents" "$T/.agent-skills/templates/claude" -name '*.md'       ! -name README.md 2>/dev/null | grep -c .)"
 assert_eq "all $EXPECTED_ROLES canonical roles are rendered" "$EXPECTED_ROLES" "$n"
 assert_contains "…driven by the contract version" "$out" "contract: 0.3.0"
 for role in orchestrator planning review security documentation critical-thinking; do
-  assert_file_exists "role $role rendered" "$T/agents/$role.md"
+  assert_file_exists "role $role rendered" \
+    "$(test -f "$T/agents/$role.md" && echo "$T/agents/$role.md" || echo "$T/.agent-skills/templates/claude/$role.md")"
 done
 
 T2="$(sandbox_new)"
 out="$($RENDER --runtime codex --target "$T2" --config "$CFG" --apply 2>&1)"; rc=$?
 assert_eq "codex render exits 0" 0 "$rc"
-n="$(find "$T2/agents" -name '*.toml' | grep -c .)"
+n="$(find "$T2/agents" "$T2/.agent-skills/templates/codex" -name '*.toml' 2>/dev/null | grep -c .)"
 assert_eq "all $EXPECTED_ROLES roles render for codex too" "$EXPECTED_ROLES" "$n"
 
 # --- contract content is carried into the instructions ------------------------
@@ -49,7 +50,7 @@ assert_contains "contract version recorded"  "$body" "contract 0.3.0"
 # --- model policy binding -----------------------------------------------------
 assert_contains "policy resolved to a configured model" "$body" "model: sonnet"
 assert_contains "…and the policy is named in provenance" "$body" "model policy: default -> sonnet"
-toml="$(cat "$T2/agents/review.toml")"
+toml="$(cat "$T2/.agent-skills/templates/codex/review.toml")"
 assert_contains "codex model bound"      "$toml" 'model = "gpt-5.6"'
 assert_contains "codex reasoning bound"  "$toml" 'model_reasoning_effort = "medium"'
 assert_contains "codex sandbox bound"    "$toml" 'sandbox_mode = "read-only"'
@@ -58,7 +59,7 @@ assert_contains "codex sandbox bound"    "$toml" 'sandbox_mode = "read-only"'
 # A role with no authorized permission set renders as a template: the canonical
 # profile alone cannot establish an authorized, restricted execution, and a file
 # with no tool limit would inherit whatever the parent holds.
-plain="$(cat "$T/agents/planning.md")"
+plain="$(cat "$T/.agent-skills/templates/claude/planning.md")"
 assert_contains "an unauthorized role is marked non-executable" "$plain" "NON-EXECUTABLE TEMPLATE"
 assert_contains "…and says no authorization was supplied"       "$plain" "tool limit: NONE"
 assert_contains "…so its skills are referenced, not preloaded"  "$plain" "skill delivery: reference"
@@ -221,7 +222,7 @@ assert_contains "…naming the excess" "$out" "exceed its ceiling"
 # Without authorization the output is a template, explicitly not executable.
 TT="$(sandbox_new)"
 out="$($RENDER --runtime claude --target "$TT" --config "$CFG3/authorized.yaml" --apply 2>&1)"
-tmpl="$(cat "$TT/agents/planning.md")"
+tmpl="$(cat "$TT/.agent-skills/templates/claude/planning.md")"
 assert_contains "an unauthorized role is marked non-executable" "$tmpl" "NON-EXECUTABLE TEMPLATE"
 assert_not_contains "…and carries no tool limit to mistake for one" "$tmpl" "tools:"
 
@@ -275,6 +276,7 @@ assert_eq "…leaving nothing written" 0 "$(find "$TE" -type f 2>/dev/null | wc 
   printf 'roles:
   testing:
     claude:
+      permissions: [read, execute]
       tools_override: [Read]
       justification: operator preference
 '
@@ -288,7 +290,7 @@ assert_contains "…even with a justification" "$out" "justified or not"
 {
   printf 'version: 3\n'
   printf 'policies:\n  default:\n    claude:\n      model: sonnet\n  escalated:\n    claude:\n      model: opus\n'
-  printf 'roles:\n  review:\n    claude:\n      tools_override: [Read]\n'
+  printf 'roles:\n  review:\n    claude:\n      permissions: [read]\n      tools_override: [Read]\n'
 } > "$CFG3/nojust.yaml"
 out="$($RENDER --runtime claude --target "$TD" --config "$CFG3/nojust.yaml" --apply 2>&1)"; rc=$?
 assert_eq "an override without a justification is rejected" 2 "$rc"
@@ -298,7 +300,7 @@ assert_contains "…because adapter policy must be visible" "$out" "must be visi
   printf 'version: 3\n'
   printf 'policies:\n  default:\n    claude:\n      model: sonnet\n  escalated:\n    claude:\n      model: opus\n'
   printf 'tool_map:\n  claude:\n    read: [Read, Grep, Glob]\n    write: [Write]\n    execute: [Bash]\n'
-  printf 'roles:\n  review:\n    claude:\n      tools_override: [Read]\n      justification: operator policy for this host\n'
+  printf 'roles:\n  review:\n    claude:\n      permissions: [read]\n      tools_override: [Read]\n      justification: operator policy for this host\n'
 } > "$CFG3/just.yaml"
 TO="$(sandbox_new)"
 out="$($RENDER --runtime claude --target "$TO" --config "$CFG3/just.yaml" --apply 2>&1)"; rc=$?
@@ -313,12 +315,142 @@ assert_contains "…and restricted, so it preloads" "$over" "skill delivery: pre
 {
   printf 'version: 3\n'
   printf 'policies:\n  default:\n    claude:\n      model: sonnet\n  escalated:\n    claude:\n      model: opus\n'
-  printf 'roles:\n  review:\n    claude:\n      tools_override: [Read]\n      justification: no map declared\n'
+  printf 'roles:\n  review:\n    claude:\n      permissions: [read]\n      tools_override: [Read]\n      justification: no map declared\n'
 } > "$CFG3/nomapoverride.yaml"
 TN="$(sandbox_new)"
 out="$($RENDER --runtime claude --target "$TN" --config "$CFG3/nomapoverride.yaml" --apply 2>&1)"; rc=$?
 assert_eq "an override with no tool_map is refused" 2 "$rc"
 assert_contains "…because coverage is unknowable" "$out" "tool_map is empty"
+
+# --- an override is an executable configuration, so it is bounded too ---------
+# Reviewed defect: the override branch checked floor coverage and returned, so a
+# justified override could name tools carrying permissions the role was neither
+# authorized for nor ever allowed to hold.
+ovr() { # ovr NAME ROLE_BLOCK
+  {
+    printf 'version: 3\n'
+    printf 'policies:\n  default:\n    claude:\n      model: sonnet\n  escalated:\n    claude:\n      model: opus\n'
+    printf 'tool_map:\n  claude:\n    read: [Read, Grep, Glob]\n    write: [Write, Edit]\n    execute: [Bash]\n    network: [WebFetch, WebSearch]\n'
+    printf '%b' "$2"
+  } > "$CFG3/$1.yaml"
+}
+
+# documentation: floor [read], ceiling [read, write]. WebFetch carries `network`,
+# which is outside both the authorization and the ceiling.
+ovr above-ceiling 'roles:\n  documentation:\n    claude:\n      permissions: [read]\n      tools_override: [Read, WebFetch]\n      justification: operator asked for web access\n'
+TOC="$(sandbox_new)"
+out="$($RENDER --runtime claude --target "$TOC" --config "$CFG3/above-ceiling.yaml" --apply 2>&1)"; rc=$?
+assert_eq "an override reaching outside the ceiling is refused" 2 "$rc"
+assert_contains "…naming the offending tool and class" "$out" "WebFetch carries network"
+assert_eq "…leaving nothing written" 0 "$(find "$TOC" -type f 2>/dev/null | wc -l)"
+
+# Authorized for read+write, but the override still reaches `network`.
+ovr outside-auth 'roles:\n  documentation:\n    claude:\n      permissions: [read, write]\n      tools_override: [Read, WebFetch]\n      justification: operator asked for web access\n'
+TOA="$(sandbox_new)"
+out="$($RENDER --runtime claude --target "$TOA" --config "$CFG3/outside-auth.yaml" --apply 2>&1)"; rc=$?
+assert_eq "an override outside the authorized set is refused" 2 "$rc"
+assert_contains "…even though it is inside no ceiling of its own" "$out" "reaches outside its authorized permissions"
+assert_contains "…and a justification does not exempt it" "$out" "justified or not"
+
+ovr unmapped 'roles:\n  documentation:\n    claude:\n      permissions: [read]\n      tools_override: [Read, UnknownTool]\n      justification: operator preference\n'
+TUM="$(sandbox_new)"
+out="$($RENDER --runtime claude --target "$TUM" --config "$CFG3/unmapped.yaml" --apply 2>&1)"; rc=$?
+assert_eq "an override naming an unmapped tool is refused" 2 "$rc"
+assert_contains "…because its permission classes are unknown" "$out" "does not "
+assert_eq "…leaving nothing written" 0 "$(find "$TUM" -type f 2>/dev/null | wc -l)"
+
+ovr no-auth 'roles:\n  documentation:\n    claude:\n      tools_override: [Read]\n      justification: operator preference\n'
+TNA="$(sandbox_new)"
+out="$($RENDER --runtime claude --target "$TNA" --config "$CFG3/no-auth.yaml" --apply 2>&1)"; rc=$?
+assert_eq "an override without authorization is refused" 2 "$rc"
+assert_contains "…because an override is still executable" "$out" "requires an explicit authorized permission set"
+
+# testing floor is [read, execute]; an override covering only read cannot meet it.
+ovr below-floor 'roles:\n  testing:\n    claude:\n      permissions: [read, execute]\n      tools_override: [Read]\n      justification: operator preference\n'
+TBF="$(sandbox_new)"
+out="$($RENDER --runtime claude --target "$TBF" --config "$CFG3/below-floor.yaml" --apply 2>&1)"; rc=$?
+assert_eq "an override below the role floor is refused" 2 "$rc"
+assert_contains "…naming the uncovered class" "$out" "does not cover its required permission"
+
+# A valid override: authorized read+execute, tools inside that set, floor covered.
+ovr valid 'roles:\n  testing:\n    claude:\n      permissions: [read, execute]\n      tools_override: [Read, Bash]\n      justification: operator narrowed the read tools\n'
+TV="$(sandbox_new)"
+out="$($RENDER --runtime claude --target "$TV" --config "$CFG3/valid.yaml" --apply 2>&1)"; rc=$?
+assert_eq "a valid override renders" 0 "$rc"
+valid_body="$(cat "$TV/agents/testing.md")"
+assert_contains "…with exactly the overridden tools" "$valid_body" "tools: Read, Bash"
+assert_contains "…stamped as adapter-declared"       "$valid_body" "ADAPTER-DECLARED override"
+assert_contains "…carrying the justification"        "$valid_body" "operator narrowed the read tools"
+
+# --- templates stay out of the runtime's discovery path -----------------------
+# A comment saying NON-EXECUTABLE does not stop a runtime listing and
+# dispatching a file in its agents directory. Placement has to do that.
+TPL="$(sandbox_new)"
+out="$($RENDER --runtime claude --target "$TPL" --config "$CFG" --apply 2>&1)"; rc=$?
+assert_eq "a mixed render succeeds" 0 "$rc"
+assert_file_exists "an authorized role is installed as an agent" "$TPL/agents/review.md"
+assert_file_absent "an unauthorized role is NOT in the agents directory" "$TPL/agents/planning.md"
+assert_file_exists "…it is written as a template instead" "$TPL/.agent-skills/templates/claude/planning.md"
+assert_file_exists "…with a README saying why" "$TPL/.agent-skills/templates/claude/README.md"
+rec="$(cat "$TPL/.agent-skills/delivered-skills-claude.json")"
+assert_contains "the delivery record marks executability" "$rec" "\"executable\""
+
+TPLC="$(sandbox_new)"
+out="$($RENDER --runtime codex --target "$TPLC" --config "$CFG" --apply 2>&1)"; rc=$?
+assert_eq "the same split applies to codex" 0 "$rc"
+assert_file_exists "…codex templates are written outside agents/" "$TPLC/.agent-skills/templates/codex/planning.toml"
+assert_file_absent "…and nothing unauthorized reaches its agents directory" "$TPLC/agents/planning.toml"
+
+# --- transitions must not leave a stale active agent --------------------------
+TR="$(sandbox_new)"
+ovr auth-planning 'roles:\n  planning:\n    claude:\n      permissions: [read]\n'
+$RENDER --runtime claude --target "$TR" --config "$CFG3/auth-planning.yaml" --apply >/dev/null 2>&1
+assert_file_exists "an authorized role starts out installed" "$TR/agents/planning.md"
+
+ovr no-planning ''
+out="$($RENDER --runtime claude --target "$TR" --config "$CFG3/no-planning.yaml" --apply 2>&1)"; rc=$?
+assert_eq "removing the authorization succeeds" 0 "$rc"
+assert_contains "…reporting the deactivation" "$out" "DEACTIVATE planning"
+assert_file_absent "…and the live agent is gone, not merely relabelled" "$TR/agents/planning.md"
+assert_file_exists "…the role survives as a template" "$TR/.agent-skills/templates/claude/planning.md"
+
+out="$($RENDER --runtime claude --target "$TR" --config "$CFG3/auth-planning.yaml" --apply 2>&1)"; rc=$?
+assert_eq "re-authorizing succeeds" 0 "$rc"
+assert_contains "…reporting the promotion" "$out" "PROMOTE"
+assert_file_exists "…the agent is installed again" "$TR/agents/planning.md"
+assert_file_absent "…and the template does not linger" "$TR/.agent-skills/templates/claude/planning.md"
+
+# A hand-edited agent must never be deleted to satisfy a deactivation, and the
+# run must not claim the role was deactivated.
+printf '\nhand edit\n' >> "$TR/agents/planning.md"
+before="$(sha256sum < "$TR/agents/planning.md")"
+out="$($RENDER --runtime claude --target "$TR" --config "$CFG3/no-planning.yaml" --apply 2>&1)"; rc=$?
+assert_ne "a modified agent blocks the deactivation" 0 "$rc"
+assert_contains "…reported as a conflict"        "$out" "CONFLICT role planning"
+assert_contains "…saying it was modified"        "$out" "modified since it was rendered"
+assert_contains "…and refusing to claim success" "$out" "was NOT deactivated"
+assert_file_exists "…the edited file is preserved" "$TR/agents/planning.md"
+assert_eq "…byte for byte" "$before" "$(sha256sum < "$TR/agents/planning.md")"
+
+# An unowned file at the active path is equally untouchable.
+TU="$(sandbox_new)"
+$RENDER --runtime claude --target "$TU" --config "$CFG3/no-planning.yaml" --apply >/dev/null 2>&1
+mkdir -p "$TU/agents"
+printf 'someone else wrote this\n' > "$TU/agents/planning.md"
+out="$($RENDER --runtime claude --target "$TU" --config "$CFG3/no-planning.yaml" --apply 2>&1)"; rc=$?
+assert_ne "an unowned agent blocks the deactivation" 0 "$rc"
+assert_contains "…as not ours to remove" "$out" "not written by this renderer"
+assert_eq "…and is left exactly as found" "someone else wrote this" "$(cat "$TU/agents/planning.md")"
+
+# --- check sees a role sitting in the wrong place ------------------------------
+TC2="$(sandbox_new)"
+$RENDER --runtime claude --target "$TC2" --config "$CFG" --apply >/dev/null 2>&1
+out="$($RENDER --runtime claude --target "$TC2" --config "$CFG" --check 2>&1)"; rc=$?
+assert_eq "check passes on a correct install" 0 "$rc"
+cp "$TC2/.agent-skills/templates/claude/planning.md" "$TC2/agents/planning.md"
+out="$($RENDER --runtime claude --target "$TC2" --config "$CFG" --check 2>&1)"; rc=$?
+assert_ne "check fails when a template is also installed as an agent" 0 "$rc"
+assert_contains "…naming the discoverable copy" "$out" "still discoverable at"
 
 # --- the pre-3 per-role tools list is refused ---------------------------------
 {
