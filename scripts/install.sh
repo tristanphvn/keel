@@ -16,9 +16,20 @@
 # alone and reported, so a local-only skill is never silently destroyed.
 #
 # Exits non-zero if any write or any backup fails. A dry run writes nothing at all.
+#
+# Every file written is recorded, with its hash, in $AGENT_HOME/.agent-skills/manifest.tsv.
+# scripts/uninstall.sh removes only what that manifest proves this installer put
+# there, and only while the file is still byte-identical to what was installed.
 set -uo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck source=lib/common.sh
+. "$ROOT/scripts/lib/common.sh"
+
+# Verify the toolchain before touching anything: a missing `diff` must not be
+# discovered after the backup step has already copied half the tree.
+as_preflight sed find cmp diff cp mv mkdir rm date basename dirname || exit 1
+
 DEST="${AGENT_HOME:-$HOME/.agent}"
 # The skills tree can be installed somewhere other than $AGENT_HOME/skills, for a
 # machine where that directory is already owned by something else (a separate
@@ -74,6 +85,21 @@ write_rendered() {
   render "$_src" > "$_tmp" || { rm -f "$_tmp"; return 1; }
   mv -f "$_tmp" "$_dst" || { rm -f "$_tmp"; return 1; }
 }
+
+# --- ownership manifest ------------------------------------------------------
+# One tab-separated line per installed file: absolute path, then the sha256 of
+# the content as written. The uninstaller trusts nothing else: a path absent
+# here was not put there by this installer, and a path whose hash no longer
+# matches has been edited by the user since.
+MANIFEST_DIR="$DEST/.agent-skills"
+MANIFEST="$MANIFEST_DIR/manifest.tsv"
+MANIFEST_TMP="$MANIFEST_DIR/manifest.tsv.tmp.$$"
+PREV_MANIFEST=""
+[ -f "$MANIFEST" ] && PREV_MANIFEST="$(cut -f1 "$MANIFEST")"
+INSTALLED_PATHS=""
+
+record() { INSTALLED_PATHS="$INSTALLED_PATHS$1
+"; }
 
 echo "repo:        $ROOT"
 echo "destination: $DEST"
@@ -147,6 +173,7 @@ while IFS= read -r pair; do
       if [ "$APPLY" -eq 1 ]; then
         write_rendered "$f" "$target" || { echo "  FAILED   $target"; failed=$((failed + 1)); }
       fi
+      record "$target"
     done < <(find "$src" -type f)
 
     # Report machine-only files; never delete them. .git is skipped: a config
@@ -164,18 +191,53 @@ while IFS= read -r pair; do
     if [ "$APPLY" -eq 1 ]; then
       write_rendered "$src" "$dst" || { echo "  FAILED   $dst"; failed=$((failed + 1)); }
     fi
+    record "$dst"
   fi
 done <<EOF
 $PAIRS
 EOF
 
+# A file this installer owned on a previous run, which the repo no longer ships
+# (a renamed skill, a deleted rule). It is never deleted here — the uninstaller
+# is the only thing that removes, and only on request.
+stale=0
+if [ -n "$PREV_MANIFEST" ]; then
+  while IFS= read -r p; do
+    [ -z "$p" ] && continue
+    printf '%s\n' "$INSTALLED_PATHS" | grep -qxF "$p" && continue
+    [ -e "$p" ] || continue
+    echo "  STALE (installed previously, no longer in repo) $p"
+    stale=$((stale + 1))
+  done <<EOF
+$PREV_MANIFEST
+EOF
+fi
+
+if [ "$APPLY" -eq 1 ] && [ "$failed" -eq 0 ]; then
+  mkdir -p "$MANIFEST_DIR" || { echo "FATAL: cannot create $MANIFEST_DIR" >&2; exit 1; }
+  : > "$MANIFEST_TMP" || { echo "FATAL: cannot write $MANIFEST_TMP" >&2; exit 1; }
+  while IFS= read -r p; do
+    [ -z "$p" ] && continue
+    printf '%s\t%s\n' "$p" "$(as_sha256 "$p")" >> "$MANIFEST_TMP"
+  done <<EOF
+$INSTALLED_PATHS
+EOF
+  mv -f "$MANIFEST_TMP" "$MANIFEST" || { echo "FATAL: cannot update $MANIFEST" >&2; exit 1; }
+fi
+
 echo
-echo "$changed file(s) would change."
+if [ "$APPLY" -eq 1 ]; then
+  echo "$changed file(s) changed."
+else
+  echo "$changed file(s) would change."
+fi
+[ "$stale" -gt 0 ] && echo "$stale stale file(s) from an earlier install — remove with scripts/uninstall.sh --stale --apply."
 if [ "$failed" -gt 0 ]; then
   echo "$failed file(s) FAILED to write." >&2
   exit 1
 fi
 if [ "$APPLY" -eq 1 ]; then
+  echo "manifest:    $MANIFEST"
   echo "Applied. Restart your coding agent so the rule imports and skill list reload."
 else
   echo "Nothing written. Re-run with --apply to install."
