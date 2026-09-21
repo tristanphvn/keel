@@ -14,10 +14,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Install PyYAML
-        # validate.sh skips its YAML check without a parser. CI is the place
-        # where that check must actually run, so the dependency is explicit.
-        run: python3 -m pip install --user pyyaml
+      - name: Install validation dependencies
+        # validate.sh SKIPS its YAML, contract and capability checks when these
+        # are missing, and a skip does not fail the run — so on a runner image
+        # that stopped shipping them, the job would still report success while
+        # silently checking less. Both are named here rather than relied upon.
+        run: python3 -m pip install --user pyyaml jsonschema
       - run: bash scripts/validate.sh
 
   tests:
