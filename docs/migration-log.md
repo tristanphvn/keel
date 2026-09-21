@@ -108,3 +108,66 @@ and checks 1–6.
 Result: `validate.sh` PASS. Verified in a sandbox — dry run writes nothing, `--apply` is
 idempotent, install→sync round trip is byte-identical, and all four hostile destination shapes
 (space, `&`, `|`, apostrophe) install cleanly.
+
+## 2026-09-21 — removal path, Codex adapter, role-to-model routing
+
+Second pass over the same layer, on top of `7dbd205`. Nothing from the previous entry was
+reverted; the installer's guarantees were re-verified in a sandbox before anything changed.
+
+Runtime measurement first. A probe configuration directory with a unique canary in each candidate
+location, `CLAUDE_CONFIG_DIR` pointed at it, and a non-interactive session asked which canaries it
+could see. This confirmed, on Claude Code 2.1.220 (Windows), the four claims the previous pass had
+measured on 2.1.278 (macOS): `rules/*.md` auto-load without imports, a user-scope `AGENTS.md` is
+inert, skills are found one level deep only, and a linked skill directory is followed. It also
+established two new facts: agent definitions in `$AGENT_HOME/agents/*.md` are discovered, and their
+`model:` frontmatter is honoured — the sub-agent transcript records `claude-haiku-4-5-20251001`
+under a `claude-sonnet-5` parent. Full matrix with evidence: `docs/runtime-capabilities.md`.
+
+Three defects found by that measurement, all Windows-only and all in the link path:
+
+- `ln -s` on a host without symlink privilege exits 0 and silently deep-copies the directory. The
+  copy was then recorded as a managed link, `--check` called it broken, and `--unlink-skills`
+  refused to remove it — a duplicated, drifting skills tree that nothing could clean up.
+  `as_link_support` now probes the mechanism (symlink → junction → none) and the adapters refuse
+  to link rather than fall back to copying.
+- link identity compared raw `readlink` output against the recorded target. MSYS resolves one
+  directory to two spellings, so a healthy link reported as broken. Comparison now goes through
+  `as_canon_path`.
+- `--unlink-skills` deleted its manifest even when it had skipped links, orphaning them.
+
+Removal (`scripts/uninstall.sh`, new): ownership comes from
+`$AGENT_HOME/.agent-skills/manifest.tsv`, written by the installer with a hash per file. A path
+absent from the manifest was not installed and is never touched; a path whose hash no longer
+matches was edited by the user and is kept and reported unless `--force`. `--stale` removes only
+what the repo has stopped shipping. Everything removed is backed up and hash-verified first.
+
+The installer also gained a dependency preflight ahead of the first write, and reports files it
+installed previously that the repo no longer ships.
+
+Codex adapter (`scripts/adapters/codex.sh`, new). The Codex CLI is not installed here, so its
+behaviour is documented, not measured, and the file says so. Two documented facts shaped it: Codex
+expands no imports in `AGENTS.md`, so the shared entrypoint's `@.../rules/...` lines would arrive
+as literal text and the rules would never load — the adapter materialises the rule bodies into its
+managed block instead; and the instruction chain is capped at `project_doc_max_bytes` (32 KiB), so
+the adapter measures what it is about to write and refuses rather than letting Codex truncate
+mid-rule. `config.toml` is never written automatically — appending to TOML is unsafe in general —
+`--print-config` prints a snippet instead.
+
+Routing (`config/routing/`, `scripts/routing/render.py`, new, optional). Maps opaque role ids onto
+model tiers and renders one agent definition per role per runtime. Model selection, reasoning and
+fallback policy are three separate sections. It never authors role instructions: a role must point
+at a profile file, and a missing profile or description is a schema error. `roles: []` — the
+current state — renders nothing, which is correct until canonical role profiles exist.
+
+Tests (`tests/`, new): 129 assertions across four files, dependency-free bash, covering dry-run
+inertness by whole-tree fingerprint, user content preserved byte-for-byte, removal boundaries,
+idempotency, path-with-spaces, link collisions, the Codex instruction budget, and routing schema
+and ownership. CI runs validation, the suite on Linux and Windows, and shellcheck.
+
+`validate.sh` gained section 10 (the routing example must still satisfy the renderer's schema), and
+section 8 was split: machine paths are forbidden repo-wide, while the vendor-neutrality rule now
+applies to installed content only — an adapter naming its own runtime's directory is its purpose,
+not a leak.
+
+Unchanged: every rule ID and rule body, all skill logic and skill names, the registry structure,
+`config/AGENTS.md`, and checks 1–7.
