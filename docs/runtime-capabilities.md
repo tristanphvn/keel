@@ -158,6 +158,23 @@ the official documentation, retrieved 2026-09-21.
    that table, and a duplicate `[agents]` header is a parse error. The adapter
    prints a snippet with `--print-config` instead.
 
+## Configured limits are not measured limits
+
+Every instruction limit this repository acts on is a **configured** value read
+from documentation or set by an operator. None has been measured against a
+running instance.
+
+| Limit | Status | Basis |
+| --- | --- | --- |
+| Codex `project_doc_max_bytes` = 32 KiB | configured, **not measured** | vendor documentation; the CLI is not installed here |
+| Renderer `--budget` (32 KiB default for Codex) | configured | mirrors the value above so a rendered file cannot silently exceed it |
+| Claude Code per-agent instruction limit | **unknown** | no documented value, and none probed. The renderer therefore enforces no limit there — absence of a documented limit is not evidence that none exists |
+
+Measuring an effective limit means growing an instruction file until the runtime
+demonstrably drops content, and observing where. That test has not been run on
+either runtime. Until it is, a file that fits the configured budget is only
+known to fit the configured budget.
+
 ## Gaps and explicit fallbacks
 
 | Gap | Fallback in force |
