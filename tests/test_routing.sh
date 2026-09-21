@@ -54,34 +54,53 @@ assert_contains "codex model bound"      "$toml" 'model = "gpt-5.6"'
 assert_contains "codex reasoning bound"  "$toml" 'model_reasoning_effort = "medium"'
 assert_contains "codex sandbox bound"    "$toml" 'sandbox_mode = "read-only"'
 
-# --- tool limits come from the contract, not from the adapter -----------------
-# With no required_permissions declared, no limit is emitted and the agent
-# inherits. Deliberately visible: the canonical model has not yet said what the
-# role needs, and an adapter inventing the answer is the defect routing schema
-# version 3 removed.
-assert_contains "an undeclared role records why it has no limit" "$body" "tool limit: none"
-assert_contains "…so its skills are referenced, not preloaded"   "$body" "skill delivery: reference"
+# --- tool limits come from an explicit authorization -------------------------
+# A role with no authorized permission set renders as a template: the canonical
+# profile alone cannot establish an authorized, restricted execution, and a file
+# with no tool limit would inherit whatever the parent holds.
+plain="$(cat "$T/agents/planning.md")"
+assert_contains "an unauthorized role is marked non-executable" "$plain" "NON-EXECUTABLE TEMPLATE"
+assert_contains "…and says no authorization was supplied"       "$plain" "tool limit: NONE"
+assert_contains "…so its skills are referenced, not preloaded"  "$plain" "skill delivery: reference"
 
 CFG3="$(sandbox_new)"
 
-# A role whose profile declares required_permissions gets a deterministic limit,
-# derived through the adapter's permission-class tool map.
+# An authorized role gets a deterministic limit through the permission-class map,
+# and the authorization may sit anywhere between the role's floor and ceiling.
 R0="$(sandbox_new)/root"
 mkdir -p "$R0"
 cp -r "$REPO_ROOT/roles" "$REPO_ROOT/contracts" "$REPO_ROOT/skills" "$REPO_ROOT/rules" "$R0/"
-python3 -c "
-import json, sys
-p = sys.argv[1] + '/roles/review.json'
-d = json.load(open(p, encoding='utf-8'))
-d['required_permissions'] = ['read', 'execute']
-json.dump(d, open(p, 'w', encoding='utf-8'))" "$R0"
+
+{
+  printf 'version: 3
+'
+  printf 'policies:
+  default:
+    claude:
+      model: sonnet
+  escalated:
+    claude:
+      model: opus
+'
+  printf 'tool_map:
+  claude:
+    read: [Read, Grep, Glob]
+    write: [Write, Edit]
+    execute: [Bash]
+'
+  printf 'roles:
+  review:
+    claude:
+      permissions: [read, execute]
+'
+} > "$CFG3/derived.yaml"
 
 TD="$(sandbox_new)"
-out="$($RENDER --runtime claude --root "$R0" --target "$TD" --config "$CFG" --apply 2>&1)"; rc=$?
-assert_eq "a role declaring required_permissions renders" 0 "$rc"
+out="$($RENDER --runtime claude --root "$R0" --target "$TD" --config "$CFG3/derived.yaml" --apply 2>&1)"; rc=$?
+assert_eq "an authorized role renders" 0 "$rc"
 derived="$(cat "$TD/agents/review.md")"
-assert_contains "…with tools derived from its permission classes" "$derived" "tools: Read, Grep, Glob, Bash"
-assert_contains "…attributed to the contract"                     "$derived" "tool limit: derived from the role"
+assert_contains "…with tools derived from the authorized classes" "$derived" "tools: Read, Grep, Glob, Bash"
+assert_contains "…attributed to the authorization"                "$derived" "derived from the authorized permissions"
 # Measured on Claude Code 2.1.220: an explicit tool list without Skill removes
 # the Skill tool, and a control run showed such a child receives no skill text.
 assert_contains "…and preloads instead of widening the limit" "$derived" "skill delivery: preload"
@@ -97,20 +116,173 @@ assert_contains "…and the delivery method"     "$rec" "preload"
 
 # A permission class the tool map does not cover fails loudly rather than
 # quietly dropping a capability the role needs.
-python3 -c "
-import json, sys
-p = sys.argv[1] + '/roles/review.json'
-d = json.load(open(p, encoding='utf-8'))
-d['required_permissions'] = ['read', 'network']
-json.dump(d, open(p, 'w', encoding='utf-8'))" "$R0"
 {
   printf 'version: 3\n'
   printf 'policies:\n  default:\n    claude:\n      model: sonnet\n  escalated:\n    claude:\n      model: opus\n'
   printf 'tool_map:\n  claude:\n    read: [Read]\n'
+  printf 'roles:\n  research:\n    claude:\n      permissions: [read, network]\n'
 } > "$CFG3/nomap.yaml"
 out="$($RENDER --runtime claude --root "$R0" --target "$TD" --config "$CFG3/nomap.yaml" --apply 2>&1)"; rc=$?
 assert_eq "an unmapped permission class is a configuration error" 2 "$rc"
 assert_contains "…and is named" "$out" "does not map"
+assert_contains "…as an authorized class, not a floor" "$out" "authorized permission"
+
+# --- R1: the floor is a minimum, not the allowlist ----------------------------
+# Regression for the reviewed defect: a role's required_permissions were used as
+# the entire tool list, so a role could never be authorized for anything above
+# its floor — a review role could not write the report the contract names.
+{
+  printf 'version: 3
+'
+  printf 'policies:
+  default:
+    claude:
+      model: sonnet
+  escalated:
+    claude:
+      model: opus
+'
+  printf 'tool_map:
+  claude:
+    read: [Read, Grep, Glob]
+    write: [Write, Edit]
+    execute: [Bash]
+'
+  printf 'roles:
+  review:
+    permissions: [read, write]
+'
+} > "$CFG3/authorized.yaml"
+TA="$(sandbox_new)"
+out="$($RENDER --runtime claude --target "$TA" --config "$CFG3/authorized.yaml" --apply 2>&1)"; rc=$?
+assert_eq "an authorized permission set renders" 0 "$rc"
+auth="$(cat "$TA/agents/review.md")"
+assert_contains "…granting tools above the floor"    "$auth" "tools: Read, Grep, Glob, Write, Edit"
+assert_contains "…attributed to the authorization"   "$auth" "derived from the authorized permissions"
+
+# Below the floor is refused: a role cannot discharge its responsibility there.
+{
+  printf 'version: 3
+'
+  printf 'policies:
+  default:
+    claude:
+      model: sonnet
+  escalated:
+    claude:
+      model: opus
+'
+  printf 'tool_map:
+  claude:
+    read: [Read]
+    write: [Write]
+    execute: [Bash]
+'
+  printf 'roles:
+  testing:
+    permissions: [read]
+'
+} > "$CFG3/belowfloor.yaml"
+TB="$(sandbox_new)"
+out="$($RENDER --runtime claude --target "$TB" --config "$CFG3/belowfloor.yaml" --apply 2>&1)"; rc=$?
+assert_eq "an authorization below the role floor is refused" 2 "$rc"
+assert_contains "…naming the missing class" "$out" "do not meet its floor"
+assert_eq "…leaving nothing written" 0 "$(find "$TB" -type f 2>/dev/null | wc -l)"
+
+# Above the ceiling is refused too.
+{
+  printf 'version: 3
+'
+  printf 'policies:
+  default:
+    claude:
+      model: sonnet
+  escalated:
+    claude:
+      model: opus
+'
+  printf 'tool_map:
+  claude:
+    read: [Read]
+    write: [Write]
+    execute: [Bash]
+    network: [WebFetch]
+'
+  printf 'roles:
+  documentation:
+    permissions: [read, write, network]
+'
+} > "$CFG3/aboveceiling.yaml"
+TC="$(sandbox_new)"
+out="$($RENDER --runtime claude --target "$TC" --config "$CFG3/aboveceiling.yaml" --apply 2>&1)"; rc=$?
+assert_eq "an authorization above the role ceiling is refused" 2 "$rc"
+assert_contains "…naming the excess" "$out" "exceed its ceiling"
+
+# Without authorization the output is a template, explicitly not executable.
+TT="$(sandbox_new)"
+out="$($RENDER --runtime claude --target "$TT" --config "$CFG3/authorized.yaml" --apply 2>&1)"
+tmpl="$(cat "$TT/agents/planning.md")"
+assert_contains "an unauthorized role is marked non-executable" "$tmpl" "NON-EXECUTABLE TEMPLATE"
+assert_not_contains "…and carries no tool limit to mistake for one" "$tmpl" "tools:"
+
+# --- R1: an explicit empty override is a decision, not an absence -------------
+{
+  printf 'version: 3
+'
+  printf 'policies:
+  default:
+    claude:
+      model: sonnet
+  escalated:
+    claude:
+      model: opus
+'
+  printf 'tool_map:
+  claude:
+    read: [Read]
+'
+  printf 'roles:
+  review:
+    claude:
+      tools_override: []
+      justification: operator wants no tools
+'
+} > "$CFG3/emptyoverride.yaml"
+TE="$(sandbox_new)"
+out="$($RENDER --runtime claude --target "$TE" --config "$CFG3/emptyoverride.yaml" --apply 2>&1)"; rc=$?
+assert_eq "an explicitly empty override is not silently ignored" 2 "$rc"
+assert_contains "…it means no tools"            "$out" "means NO tools"
+assert_contains "…and says why it refuses"      "$out" "has not been measured"
+assert_eq "…leaving nothing written" 0 "$(find "$TE" -type f 2>/dev/null | wc -l)"
+
+# An override still has to satisfy the floor, justified or not.
+{
+  printf 'version: 3
+'
+  printf 'policies:
+  default:
+    claude:
+      model: sonnet
+  escalated:
+    claude:
+      model: opus
+'
+  printf 'tool_map:
+  claude:
+    read: [Read, Grep, Glob]
+    execute: [Bash]
+'
+  printf 'roles:
+  testing:
+    claude:
+      tools_override: [Read]
+      justification: operator preference
+'
+} > "$CFG3/shortoverride.yaml"
+TS="$(sandbox_new)"
+out="$($RENDER --runtime claude --target "$TS" --config "$CFG3/shortoverride.yaml" --apply 2>&1)"; rc=$?
+assert_eq "an override below the floor is refused" 2 "$rc"
+assert_contains "…even with a justification" "$out" "justified or not"
 
 # --- adapter-declared limits must be visible, never silent --------------------
 {
@@ -125,6 +297,7 @@ assert_contains "…because adapter policy must be visible" "$out" "must be visi
 {
   printf 'version: 3\n'
   printf 'policies:\n  default:\n    claude:\n      model: sonnet\n  escalated:\n    claude:\n      model: opus\n'
+  printf 'tool_map:\n  claude:\n    read: [Read, Grep, Glob]\n    write: [Write]\n    execute: [Bash]\n'
   printf 'roles:\n  review:\n    claude:\n      tools_override: [Read]\n      justification: operator policy for this host\n'
 } > "$CFG3/just.yaml"
 TO="$(sandbox_new)"
@@ -134,6 +307,18 @@ over="$(cat "$TO/agents/review.md")"
 assert_contains "…stamped as adapter-declared"  "$over" "ADAPTER-DECLARED override"
 assert_contains "…carrying the justification"   "$over" "operator policy for this host"
 assert_contains "…and restricted, so it preloads" "$over" "skill delivery: preload"
+
+# An override cannot be checked against a floor without a tool map, so it is
+# refused rather than accepted on trust.
+{
+  printf 'version: 3\n'
+  printf 'policies:\n  default:\n    claude:\n      model: sonnet\n  escalated:\n    claude:\n      model: opus\n'
+  printf 'roles:\n  review:\n    claude:\n      tools_override: [Read]\n      justification: no map declared\n'
+} > "$CFG3/nomapoverride.yaml"
+TN="$(sandbox_new)"
+out="$($RENDER --runtime claude --target "$TN" --config "$CFG3/nomapoverride.yaml" --apply 2>&1)"; rc=$?
+assert_eq "an override with no tool_map is refused" 2 "$rc"
+assert_contains "…because coverage is unknowable" "$out" "tool_map is empty"
 
 # --- the pre-3 per-role tools list is refused ---------------------------------
 {

@@ -9,7 +9,7 @@
 Source of truth
 ---------------
 `roles/catalog.json` and the `roles/<id>.json` profiles it references, against
-agent-work contract **0.2.0**. This renderer holds no second role source: it
+agent-work contract **0.3.0**. This renderer holds no second role source: it
 authors no purpose, no responsibility and no instruction text. Everything in a
 generated file is either copied from a canonical artifact or is adapter-owned
 routing configuration.
@@ -43,6 +43,7 @@ Exit codes: 0 ok · 1 collision or write failure · 2 contract/config error
 
 import argparse
 import hashlib
+import importlib.util
 import json
 import os
 import re
@@ -50,6 +51,9 @@ import subprocess
 import sys
 
 CONTRACT_VERSION = "0.3.0"
+# The contract's permission classes. Tool NAMES stay adapter-owned; these are
+# the runtime-independent classes the contract itself defines.
+PERMISSION_CLASSES = ["read", "write", "execute", "network", "delegate"]
 
 # --- YAML ---------------------------------------------------------------------
 # PyYAML when present; otherwise a parser for the restricted subset the routing
@@ -360,44 +364,127 @@ def role_options(cfg, rid, runtime):
     return entry, opts
 
 
-def effective_tools(role, cfg, opts, runtime):
-    """The tool allowlist for a role, and where it came from.
+def classes_for_tools(tool_map, tools):
+    """Which permission classes a tool list can satisfy, per the adapter's map.
 
-    Three outcomes, deliberately distinguishable in the generated file:
-
-      contract   derived from the role's `required_permissions` through the
-                 adapter's tool_map. Deterministic: same contract plus same map
-                 gives the same list on every machine.
-      adapter    an explicit `tools_override`, which the routing file must
-                 justify. Recorded as adapter-declared so nobody mistakes it for
-                 something the contract asked for.
-      none       the role declares no required_permissions and no override was
-                 given, so no restriction is emitted and the agent inherits.
-                 Less restrictive, and honestly attributed: the canonical model
-                 has not yet said what this role needs.
+    Used to check an operator override against the role's floor. A tool may span
+    classes — a shell can write files and reach the network — so this says which
+    classes are *covered*, never which effects are denied.
     """
-    override = opts.get("tools_override")
-    if override:
+    covered = set()
+    for cls, names in (tool_map or {}).items():
+        for name in names or []:
+            if name in tools:
+                covered.add(cls)
+    return covered
+
+
+def authorized_permissions(role, cfg, opts, entry):
+    """The explicitly authorized permission classes for this role, or None.
+
+    The floor is a minimum, not an authorization and not an allowlist: a review
+    role with a `read` floor may be authorized to write its report. So the
+    authorized set is supplied by the operator — per role, or as a default for
+    the run — and is then checked against floor and ceiling. Nothing is inferred
+    from the floor alone.
+    """
+    for source in (opts.get("permissions"), entry.get("permissions"),
+                   cfg.get("default_authorized_permissions")):
+        if source is not None:
+            return list(source)
+    return None
+
+
+def effective_tools(role, cfg, rid, runtime):
+    """(tools, origin, note) for a role.
+
+    tools is None only for a template: a file explicitly marked non-executable.
+    Otherwise it is a concrete list, possibly empty.
+
+    Origins, all distinguishable in the generated file:
+
+      authorized  derived from an explicit authorized permission set through the
+                  adapter's tool_map. The floor is checked as a minimum and the
+                  ceiling as a bound; the set may sit anywhere between them.
+      adapter     an explicit tools_override. Still checked against the floor —
+                  a justification does not exempt an override from the contract.
+      template    no authorization context was supplied, so no executable
+                  configuration is produced. The contract allows a template; it
+                  does not allow claiming an authorized, restricted execution
+                  from a profile alone, and an agent file with no tool limit
+                  inherits whatever the parent has.
+    """
+    entry, opts = role_options(cfg, rid, runtime)
+    floor = set(role.get("required_permissions") or [])
+    ceiling = set(role.get("permission_ceiling") or [])
+    tool_map = (cfg.get("tool_map") or {}).get(runtime) or {}
+
+    # `tools_override` present but empty is a decision, not an absence: it means
+    # no tools. Previously an empty list was falsy and fell through to inherited
+    # or floor-derived tools — the opposite of what the operator wrote.
+    if "tools_override" in opts:
+        override = opts.get("tools_override")
+        if not isinstance(override, list):
+            die(2, "role %s: tools_override must be a list (use [] for no tools)" % role["id"])
+        if not override:
+            # An empty allowlist must mean no tools. Whether this runtime
+            # represents that is unmeasured here, so the renderer refuses rather
+            # than emitting something whose meaning it cannot state.
+            die(2, "role %s: tools_override is explicitly empty, which means NO tools. "
+                   "Whether %s represents an empty tool list as 'no tools' rather than "
+                   "'unrestricted' has not been measured in this repository, so the "
+                   "renderer will not emit it. Measure it and record the evidence, or "
+                   "remove the override. It is never treated as inherited tools."
+                   % (role["id"], runtime))
+        if floor and not tool_map:
+            die(2, "role %s: tools_override cannot be checked against the role's floor "
+                   "because the %s tool_map is empty, so which classes those tools cover "
+                   "is unknown. Declare the map, or do not override."
+                   % (role["id"], runtime))
+        covered = classes_for_tools(tool_map, override)
+        unmet = sorted(floor - covered)
+        if unmet:
+            die(2, "role %s: tools_override does not cover its required permission "
+                   "class(es) %s. An override is subject to the same floor as anything "
+                   "else, justified or not."
+                   % (role["id"], ", ".join(unmet)))
         return list(override), "adapter", opts.get("justification", "")
 
-    needed = role.get("required_permissions") or []
-    if not needed:
-        return None, "none", ""
+    granted = authorized_permissions(role, cfg, opts, entry)
+    if granted is None:
+        return None, "template", ""
 
-    tool_map = (cfg.get("tool_map") or {}).get(runtime) or {}
-    missing = [c for c in needed if not tool_map.get(c)]
+    granted_set = set(granted)
+    unknown = sorted(granted_set - set(PERMISSION_CLASSES))
+    if unknown:
+        die(2, "role %s: unknown permission class(es) %s" % (role["id"], ", ".join(unknown)))
+
+    # floor <= authorized <= ceiling, the same inequality the contract states.
+    unmet = sorted(floor - granted_set)
+    if unmet:
+        die(2, "role %s: the authorized permissions %s do not meet its floor; %s missing. "
+               "A role cannot discharge its responsibility below its floor — grant them "
+               "or do not dispatch this role."
+               % (role["id"], ", ".join(sorted(granted_set)) or "(none)", ", ".join(unmet)))
+    excess = sorted(granted_set - ceiling)
+    if excess:
+        die(2, "role %s: the authorized permissions exceed its ceiling by %s. The ceiling "
+               "is a bound on what the role may ever be granted."
+               % (role["id"], ", ".join(excess)))
+
+    missing = [c for c in sorted(granted_set) if not tool_map.get(c)]
     if missing:
-        die(2, "role %s requires permission class(es) %s, which the %s tool_map does "
-               "not map to any tool. An unmapped class is a configuration error; the "
-               "renderer will not silently drop a capability the role needs."
+        die(2, "role %s is authorized for permission class(es) %s, which the %s tool_map "
+               "does not map to any tool. An unmapped class is a configuration error; the "
+               "renderer will not silently drop an authorized permission."
                % (role["id"], ", ".join(missing), runtime))
 
     tools = []
-    for cls in needed:
+    for cls in granted:
         for name in tool_map[cls]:
             if name not in tools:
                 tools.append(name)
-    return tools, "contract", ""
+    return tools, "authorized", ",".join(sorted(granted_set))
 
 
 # --- instruction body ---------------------------------------------------------
@@ -462,14 +549,16 @@ def load_skill_bodies(role):
     return out
 
 
-def describe_tool_origin(origin, justification):
+def describe_tool_origin(origin, note):
     """Say where a tool limit came from, so adapter policy is never mistaken for
-    something the contract required."""
-    if origin == "contract":
-        return "derived from the role's required_permissions"
+    something the contract required, and an unauthorized template is never
+    mistaken for a restricted execution."""
+    if origin == "authorized":
+        return "derived from the authorized permissions [%s]" % note
     if origin == "adapter":
-        return "ADAPTER-DECLARED override - %s" % (justification or "no justification given")
-    return "none (role declares no required_permissions; the agent inherits)"
+        return "ADAPTER-DECLARED override - %s" % (note or "no justification given")
+    return ("NONE - no authorized permission set was supplied, so this file is a "
+            "template and carries no tool limit")
 
 
 def decide_delivery(role, entry, tools, runtime):
@@ -500,7 +589,7 @@ def render_claude(role, catalog, cfg, revision):
     entry, opts = role_options(cfg, role["id"], "claude")
     policy = role["model_policy_ref"]
     model = cfg["policies"][policy]["claude"]["model"]
-    tools, origin, justification = effective_tools(role, cfg, opts, "claude")
+    tools, origin, justification = effective_tools(role, cfg, role["id"], "claude")
     delivery, why = decide_delivery(role, entry, tools, "claude")
     skills_inline = load_skill_bodies(role) if delivery == "preload" else []
 
@@ -518,6 +607,11 @@ def render_claude(role, catalog, cfg, revision):
     head.append("<!-- model policy: %s -> %s · skill delivery: %s (%s) -->" %
                 (policy, model, delivery, why))
     head.append("<!-- tool limit: %s -->" % describe_tool_origin(origin, justification))
+    if origin == "template":
+        head.append("<!-- NON-EXECUTABLE TEMPLATE: no authorized permission set was supplied, "
+                    "so this agent has no tool limit and would inherit the parent's tools. "
+                    "Do not dispatch it. Supply authorized permissions to render an "
+                    "executable configuration. -->")
     head.append("")
     return "\n".join(head) + "\n" + execution_instructions(
         role, catalog, delivery, skills_inline, "")
@@ -531,7 +625,7 @@ def render_codex(role, catalog, cfg, revision):
     entry, opts = role_options(cfg, role["id"], "codex")
     policy = role["model_policy_ref"]
     binding = cfg["policies"][policy]["codex"]
-    tools, origin, justification = effective_tools(role, cfg, opts, "codex")
+    tools, origin, justification = effective_tools(role, cfg, role["id"], "codex")
     delivery, why = decide_delivery(role, entry, tools, "codex")
     skills_inline = load_skill_bodies(role) if delivery == "preload" else []
 
@@ -541,6 +635,11 @@ def render_codex(role, catalog, cfg, revision):
         "# source: %s · contract %s · revision %s" % (role["_ref"], CONTRACT_VERSION, revision),
         "# model policy: %s · skill delivery: %s (%s)" % (policy, delivery, why),
         "# tool limit: %s" % describe_tool_origin(origin, justification),
+    ]
+    if origin == "template":
+        out.append("# NON-EXECUTABLE TEMPLATE: no authorized permission set was supplied, so")
+        out.append("# this agent carries no tool limit and would inherit. Do not dispatch it.")
+    out += [
         "name = %s" % toml_str(role["id"]),
         "description = %s" % toml_str(role["purpose"].replace("\n", " ")),
         "model = %s" % toml_str(binding["model"]),
@@ -567,18 +666,42 @@ RENDERERS = {"claude": (".md", render_claude), "codex": (".toml", render_codex)}
 RUNTIME_FAMILY = {"claude": "claude-code", "codex": "codex"}
 
 
+def canonical_capability_validator(repo_root):
+    """Import the canonical capability validator, so this path cannot drift."""
+    path = os.path.join(repo_root, "scripts", "capabilities", "validate.py")
+    spec = importlib.util.spec_from_file_location("agent_skills_capability_validate", path)
+    if spec is None or spec.loader is None:
+        die(2, "cannot load the canonical capability validator at %s" % path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
 def load_capability_record(path, repo_root):
+    """Load a record only after it passes canonical validation.
+
+    A label is not evidence. Before this, the renderer read `state: enforced` and
+    believed it — a record with its evidence array emptied still authorised a
+    role that required enforcement. The record now goes through the same schema
+    and semantic checks the capability validator applies, including evidence
+    presence and kind, probe containment, existence and digest.
+
+    Validation is not measurement: passing here says the record is well-formed
+    and internally consistent, not that the runtime still behaves that way.
+    """
     rec = load_json_file(path)
-    if rec.get("record_version") != 1:
-        die(2, "%s: record_version %r is not supported; this renderer implements 1 exactly"
+    if rec.get("record_version") != 2:
+        die(2, "%s: record_version %r is not supported; this renderer implements 2 exactly"
                % (path, rec.get("record_version")))
-    if rec.get("kind") != "runtime-capability-record":
-        die(2, "%s: kind %r, expected 'runtime-capability-record'" % (path, rec.get("kind")))
-    for key in ("status", "runtime", "platform", "capabilities"):
-        if key not in rec:
-            die(2, "%s: capability record is missing %r" % (path, key))
-    if rec["status"] not in ("measured", "example"):
-        die(2, "%s: status %r is not recognised" % (path, rec["status"]))
+
+    validator = canonical_capability_validator(repo_root)
+    ok, problems = validator.validate_record_file(repo_root, path)
+    if not ok:
+        for problem in problems[:8]:
+            sys.stderr.write("  invalid record: %s\n" % problem)
+        die(2, "%s did not pass canonical capability validation, so it authorises nothing. "
+               "Nothing was written." % path)
+
     rec["_path"] = path
     rec["_requirements"] = evidence_requirements(repo_root)
     return rec
@@ -643,12 +766,25 @@ def check_capabilities(roles, record, runtime, version, platform):
     """
     failures = []
 
+    needs_evidence = any(role.get("required_capabilities") for role in roles)
+
     if record is not None:
         family = RUNTIME_FAMILY[runtime]
         if record["runtime"].get("family") != family:
             die(2, "%s: record is for runtime family %r, but rendering %r. A record proves "
                    "nothing about another runtime."
                    % (record["_path"], record["runtime"].get("family"), family))
+
+        # An optional match flag cannot establish compatibility with a target
+        # nobody named. When a record is what permits an evidence-dependent
+        # render, the target it is being matched against has to be stated.
+        if needs_evidence and (version is None or platform is None):
+            die(2, "a role requires a capability, so the target runtime must be identified: "
+                   "pass --runtime-version and --platform. %s measures %s %s on %s; without a "
+                   "stated target there is nothing to compare it against."
+                   % (record["_path"], record["runtime"].get("family"),
+                      record["runtime"].get("version"), record["platform"].get("os")))
+
         if version is not None and record["runtime"].get("version") != version:
             die(2, "%s: record measures version %r, but --runtime-version says %r. A "
                    "measurement of one version does not carry to another."
@@ -681,7 +817,7 @@ def delivery_record(roles, cfg, runtime, revision):
            "profile_revision": revision, "roles": {}}
     for role in roles:
         entry, opts = role_options(cfg, role["id"], runtime)
-        tools, _origin, _just = effective_tools(role, cfg, opts, runtime)
+        tools, _origin, _just = effective_tools(role, cfg, role["id"], runtime)
         delivery, _why = decide_delivery(role, entry, tools, runtime)
         out["roles"][role["id"]] = [
             {"ref": s["ref"], "sha256": s["sha256"], "method": delivery}
