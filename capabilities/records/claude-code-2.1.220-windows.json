@@ -1,5 +1,5 @@
 {
-  "record_version": 1,
+  "record_version": 2,
   "kind": "runtime-capability-record",
   "status": "measured",
   "runtime": {
@@ -58,15 +58,25 @@
       ]
     },
     "workspace-isolation": {
-      "state": "unavailable",
+      "state": "unmeasured",
+      "reason": "No probe has tested whether the runtime provides a separate writable workspace per task. The outside-read probe measured read confinement, which neither establishes nor refutes workspace allocation: separate worktrees can give each task its own writable location while still permitting reads elsewhere. That result is kept under `observations` as filesystem-read-confinement."
+    }
+  },
+  "observations": [
+    {
+      "id": "filesystem-read-confinement",
+      "summary": "Reads were not confined to the session's working directory in the tested execution: a child emitted tool_use Read for an absolute path outside it and received the file content with no error, while the in-directory control read succeeded in the same session.",
+      "not_a_claim_about": [
+        "workspace-isolation"
+      ],
       "evidence": [
         {
-          "probe": "tests/probes/workspace-isolation.sh",
-          "probe_sha256": "edf4858e350404aef48e07933bd2727971980504689591d8dee6c29cf5f18c58",
+          "probe": "tests/probes/filesystem-read-confinement.sh",
+          "probe_sha256": "b6b13f4f2100bac68b9f6b652c746e420f35b7171ec788af9d7761248cc174e3",
           "kind": "observation",
-          "observation": "A child read a canary file located outside the session's working directory: tool_use Read on the out-of-scope absolute path returned the file content with no error, while the in-workspace control read also succeeded in the same session. The runtime imposes no workspace boundary on sub-agent file access here."
+          "observation": "A child read a canary file located outside the session's working directory: tool_use Read on the out-of-scope absolute path returned the file content with no error, while the in-workspace control read also succeeded in the same session. This establishes read confinement behaviour only."
         }
       ]
     }
-  }
+  ]
 }

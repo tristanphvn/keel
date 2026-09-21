@@ -142,7 +142,7 @@ Measuring a runtime is a separate, deliberate act:
 ```bash
 bash tests/probes/tool-isolation.sh
 bash tests/probes/fresh-context.sh
-bash tests/probes/workspace-isolation.sh
+bash tests/probes/filesystem-read-confinement.sh
 ```
 
 These are not in `tests/run.sh` — they need credentials, network and billable
