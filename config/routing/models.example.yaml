@@ -1,0 +1,78 @@
+# Role-to-model routing — EXAMPLE. Copy to models.yaml and edit.
+#
+# This file maps ROLE ids onto concrete provider/model identifiers per runtime.
+# It is the only place in the repository where a real model identifier appears.
+#
+# What this file is NOT:
+#   * it does not define roles. Role profiles — what a role is for, and the
+#     instructions it carries — are canonical artifacts owned elsewhere. Here a
+#     role is an opaque id plus a pointer to its profile file.
+#   * it does not ship as an active default. Installation works with no routing
+#     file at all; routing is opt-in.
+#
+# Model identifiers: put ONLY identifiers you have verified against the runtime
+# you are targeting. Informal names ("the light model", a marketing name) are
+# not API identifiers and will fail at spawn time, or silently fall back.
+#
+# Verification status of the values below is recorded in
+# docs/runtime-capabilities.md. Anything marked unverified there is an EXAMPLE,
+# not a recommendation.
+
+version: 1
+
+# --- model selection ---------------------------------------------------------
+# Named tiers, so a role names a tier rather than pinning an identifier. Each
+# runtime resolves the tier its own way.
+catalog:
+  - tier: standard
+    claude:
+      model: sonnet          # CLI alias; resolved by Claude Code at spawn time
+    codex:
+      model: gpt-5.6         # EXAMPLE — verify against your Codex install
+  - tier: deep
+    claude:
+      model: opus
+    codex:
+      model: gpt-5.6         # EXAMPLE
+  - tier: cheap
+    claude:
+      model: haiku
+    codex:
+      model: gpt-5.6         # EXAMPLE
+
+# --- reasoning settings ------------------------------------------------------
+# Kept separate from model selection on purpose: the same tier is used at
+# different reasoning depths, and the two runtimes express depth differently.
+#   claude: no per-agent reasoning key is documented — see capabilities matrix
+#   codex:  model_reasoning_effort = low | medium | high | xhigh
+reasoning:
+  default: medium
+  levels: [low, medium, high, xhigh]
+
+# --- fallback policy ---------------------------------------------------------
+# Applied when a runtime cannot honour a role's request. Each step is tried in
+# order; `deny` means fail loudly rather than quietly running something else.
+fallback:
+  on_unknown_model: deny
+  on_missing_capability: [degrade_to_inline, deny]
+  # degrade_to_inline = run the role's instructions in the current session
+  # instead of a separate agent, and say so in the output.
+
+# --- roles -------------------------------------------------------------------
+# `profile` points at the canonical role profile. The renderer copies the
+# instructions from there verbatim; it never authors role instructions itself.
+# Until the canonical profiles exist, leave `roles` empty — the renderer will
+# report that there is nothing to render rather than inventing content.
+roles: []
+
+# Shape, once profiles exist:
+#
+# roles:
+#   - id: reviewer
+#     profile: profiles/reviewer.md      # relative to this file
+#     tier: deep
+#     reasoning: high
+#     claude:
+#       tools: [Read, Grep, Glob, Bash]  # omit to inherit the parent's tool set
+#     codex:
+#       sandbox_mode: read-only
