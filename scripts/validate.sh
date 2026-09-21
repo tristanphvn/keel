@@ -120,15 +120,31 @@ done
 if printf '%s\n' "$imports" | grep -qx "learned-rules.md"; then pass "learned-rules.md is imported"; else bad "config/learned-rules.md exists but is never imported"; fi
 
 echo "== 8. Portability: no machine-specific or vendor-locked paths =="
-# The repo must stay agent-neutral and free of one developer's filesystem. Files
-# that get installed use the {{AGENT_HOME}} token; nothing may hardcode a home
-# directory, a drive letter, or a single vendor's config directory.
-leak_patterns='(^|[^A-Za-z])(~|\$HOME)/\.[a-z-]+/(rules|skills|skill-registry)|[A-Za-z]:\\(Users|vault|personal)|/c/Users/'
-leaks=$(git ls-files -z | xargs -0 grep -lE "$leak_patterns" 2>/dev/null | grep -v '^scripts/validate.sh$')
+# Two different rules, because two different things are being protected.
+#
+# 8a. One developer's filesystem must not appear anywhere in the repo. A drive
+#     letter or a literal user directory is a leak no matter which file it is in.
+machine_patterns='[A-Za-z]:\\(Users|vault|personal)|/c/Users/'
+leaks=$(git ls-files -z | xargs -0 grep -lE "$machine_patterns" 2>/dev/null | grep -v '^scripts/validate.sh$')
 if [ -z "$leaks" ]; then
-  pass "no hardcoded home, drive-letter, or vendor config paths"
+  pass "no hardcoded drive-letter or user-directory paths"
 else
-  for f in $leaks; do bad "machine-specific or vendor-locked path in $f"; done
+  for f in $leaks; do bad "machine-specific path in $f"; done
+fi
+
+# 8b. INSTALLED content must additionally stay vendor-neutral: it is shared by
+#     every runtime and resolves through {{AGENT_HOME}}. Adapters, their docs and
+#     the routing layer are exempt by definition — naming a runtime's own
+#     configuration directory is precisely their job, and a check that forbade it
+#     would only be satisfied by making the adapters wrong.
+vendor_pattern='(^|[^A-Za-z])(~|\$HOME)/\.[a-z-]+/(rules|skills|skill-registry|agents)'
+vendor_leaks=$(git ls-files rules skills registry commands \
+                 config/AGENTS.md config/learned-rules.md -z \
+               | xargs -0 grep -lE "$vendor_pattern" 2>/dev/null)
+if [ -z "$vendor_leaks" ]; then
+  pass "installed content names no vendor configuration directory"
+else
+  for f in $vendor_leaks; do bad "vendor-locked path in installed file $f"; done
 fi
 
 # Installed files must not carry a raw absolute AGENT_HOME; they use the token.
@@ -185,6 +201,26 @@ if command -v python3 >/dev/null 2>&1; then
   fi
 else
   skip "no python3 — registry and frontmatter unparsed"
+fi
+
+echo "== 10. Routing configuration =="
+# The example is what a user copies, so it has to stay valid against the
+# renderer's own schema. Rendering is a dry run into a throwaway directory.
+if command -v python3 >/dev/null 2>&1; then
+  routing_tmp="$(mktemp -d)"
+  for cfg in config/routing/models.example.yaml config/routing/models.yaml; do
+    [ -f "$cfg" ] || continue
+    for rt in claude codex; do
+      if out=$(python3 scripts/routing/render.py --runtime "$rt" --config "$cfg" --target "$routing_tmp" 2>&1); then
+        pass "$cfg renders for $rt"
+      else
+        bad "$cfg fails schema validation for $rt: $(printf '%s' "$out" | grep -m1 'schema error\|FATAL')"
+      fi
+    done
+  done
+  rm -rf "$routing_tmp"
+else
+  skip "no python3 — routing configuration unvalidated"
 fi
 
 echo
