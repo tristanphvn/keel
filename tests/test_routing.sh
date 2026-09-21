@@ -22,7 +22,7 @@ out="$($RENDER --runtime claude --target "$T" --config "$CFG" --apply 2>&1)"; rc
 assert_eq "claude render exits 0" 0 "$rc"
 n="$(find "$T/agents" -name '*.md' | grep -c .)"
 assert_eq "all $EXPECTED_ROLES canonical roles are rendered" "$EXPECTED_ROLES" "$n"
-assert_contains "…driven by the contract version" "$out" "contract: 0.2.0"
+assert_contains "…driven by the contract version" "$out" "contract: 0.3.0"
 for role in orchestrator planning review security documentation critical-thinking; do
   assert_file_exists "role $role rendered" "$T/agents/$role.md"
 done
@@ -44,7 +44,7 @@ assert_contains "completion criteria carried" "$body" "## Completion criteria"
 assert_contains "permission ceiling stated"  "$body" "Permission ceiling: read, write, execute"
 assert_contains "canonical skill refs kept"  "$body" "skills/review-code/SKILL.md"
 assert_contains "provenance recorded"        "$body" "source: roles/review.json"
-assert_contains "contract version recorded"  "$body" "contract 0.2.0"
+assert_contains "contract version recorded"  "$body" "contract 0.3.0"
 
 # --- model policy binding -----------------------------------------------------
 assert_contains "policy resolved to a configured model" "$body" "model: sonnet"
@@ -54,32 +54,108 @@ assert_contains "codex model bound"      "$toml" 'model = "gpt-5.6"'
 assert_contains "codex reasoning bound"  "$toml" 'model_reasoning_effort = "medium"'
 assert_contains "codex sandbox bound"    "$toml" 'sandbox_mode = "read-only"'
 
-# --- skill delivery under tool restrictions -----------------------------------
-# Measured: a Claude sub-agent given an explicit tools list without `Skill` has
-# no Skill tool, so referencing a skill would deliver nothing. The renderer
-# preloads the canonical body instead of widening the permission.
-assert_contains "restricted role declares its tool limit" "$body" "tools: Read, Grep, Glob, Bash"
-assert_contains "…and preloads its skills"                "$body" "skill delivery: preload"
-assert_contains "…with the canonical body inlined"        "$body" "begin canonical skill: skills/review-code/SKILL.md"
-assert_contains "…traceable by hash"                      "$body" "sha256="
-n_inlined="$(grep -c 'begin canonical skill' "$T/agents/review.md")"
+# --- tool limits come from the contract, not from the adapter -----------------
+# With no required_permissions declared, no limit is emitted and the agent
+# inherits. Deliberately visible: the canonical model has not yet said what the
+# role needs, and an adapter inventing the answer is the defect routing schema
+# version 3 removed.
+assert_contains "an undeclared role records why it has no limit" "$body" "tool limit: none"
+assert_contains "…so its skills are referenced, not preloaded"   "$body" "skill delivery: reference"
+
+CFG3="$(sandbox_new)"
+
+# A role whose profile declares required_permissions gets a deterministic limit,
+# derived through the adapter's permission-class tool map.
+R0="$(sandbox_new)/root"
+mkdir -p "$R0"
+cp -r "$REPO_ROOT/roles" "$REPO_ROOT/contracts" "$REPO_ROOT/skills" "$REPO_ROOT/rules" "$R0/"
+python3 -c "
+import json, sys
+p = sys.argv[1] + '/roles/review.json'
+d = json.load(open(p, encoding='utf-8'))
+d['required_permissions'] = ['read', 'execute']
+json.dump(d, open(p, 'w', encoding='utf-8'))" "$R0"
+
+TD="$(sandbox_new)"
+out="$($RENDER --runtime claude --root "$R0" --target "$TD" --config "$CFG" --apply 2>&1)"; rc=$?
+assert_eq "a role declaring required_permissions renders" 0 "$rc"
+derived="$(cat "$TD/agents/review.md")"
+assert_contains "…with tools derived from its permission classes" "$derived" "tools: Read, Grep, Glob, Bash"
+assert_contains "…attributed to the contract"                     "$derived" "tool limit: derived from the role"
+# Measured on Claude Code 2.1.220: an explicit tool list without Skill removes
+# the Skill tool, and a control run showed such a child receives no skill text.
+assert_contains "…and preloads instead of widening the limit" "$derived" "skill delivery: preload"
+assert_contains "…with the canonical body inlined"  "$derived" "begin canonical skill: skills/review-code/SKILL.md"
+assert_contains "…traceable by hash"                "$derived" "sha256="
+n_inlined="$(grep -c 'begin canonical skill' "$TD/agents/review.md")"
 assert_eq "every declared skill is delivered" 2 "$n_inlined"
 
-plain="$(cat "$T/agents/planning.md")"
-assert_contains "an unrestricted role keeps its Skill tool" "$plain" "skill delivery: reference"
-assert_not_contains "…and is not bloated with inlined copies" "$plain" "begin canonical skill"
+assert_file_exists "a delivery record is written" "$TD/.agent-skills/delivered-skills-claude.json"
+rec="$(cat "$TD/.agent-skills/delivered-skills-claude.json")"
+assert_contains "…naming the contract version" "$rec" "0.3.0"
+assert_contains "…and the delivery method"     "$rec" "preload"
+
+# A permission class the tool map does not cover fails loudly rather than
+# quietly dropping a capability the role needs.
+python3 -c "
+import json, sys
+p = sys.argv[1] + '/roles/review.json'
+d = json.load(open(p, encoding='utf-8'))
+d['required_permissions'] = ['read', 'network']
+json.dump(d, open(p, 'w', encoding='utf-8'))" "$R0"
+{
+  printf 'version: 3\n'
+  printf 'policies:\n  default:\n    claude:\n      model: sonnet\n  escalated:\n    claude:\n      model: opus\n'
+  printf 'tool_map:\n  claude:\n    read: [Read]\n'
+} > "$CFG3/nomap.yaml"
+out="$($RENDER --runtime claude --root "$R0" --target "$TD" --config "$CFG3/nomap.yaml" --apply 2>&1)"; rc=$?
+assert_eq "an unmapped permission class is a configuration error" 2 "$rc"
+assert_contains "…and is named" "$out" "does not map"
+
+# --- adapter-declared limits must be visible, never silent --------------------
+{
+  printf 'version: 3\n'
+  printf 'policies:\n  default:\n    claude:\n      model: sonnet\n  escalated:\n    claude:\n      model: opus\n'
+  printf 'roles:\n  review:\n    claude:\n      tools_override: [Read]\n'
+} > "$CFG3/nojust.yaml"
+out="$($RENDER --runtime claude --target "$TD" --config "$CFG3/nojust.yaml" --apply 2>&1)"; rc=$?
+assert_eq "an override without a justification is rejected" 2 "$rc"
+assert_contains "…because adapter policy must be visible" "$out" "must be visible, not silent"
+
+{
+  printf 'version: 3\n'
+  printf 'policies:\n  default:\n    claude:\n      model: sonnet\n  escalated:\n    claude:\n      model: opus\n'
+  printf 'roles:\n  review:\n    claude:\n      tools_override: [Read]\n      justification: operator policy for this host\n'
+} > "$CFG3/just.yaml"
+TO="$(sandbox_new)"
+out="$($RENDER --runtime claude --target "$TO" --config "$CFG3/just.yaml" --apply 2>&1)"; rc=$?
+assert_eq "a justified override renders" 0 "$rc"
+over="$(cat "$TO/agents/review.md")"
+assert_contains "…stamped as adapter-declared"  "$over" "ADAPTER-DECLARED override"
+assert_contains "…carrying the justification"   "$over" "operator policy for this host"
+assert_contains "…and restricted, so it preloads" "$over" "skill delivery: preload"
+
+# --- the pre-3 per-role tools list is refused ---------------------------------
+{
+  printf 'version: 3\n'
+  printf 'policies:\n  default:\n    claude:\n      model: sonnet\n  escalated:\n    claude:\n      model: opus\n'
+  printf 'roles:\n  review:\n    claude:\n      tools: [Read]\n'
+} > "$CFG3/oldtools.yaml"
+out="$($RENDER --runtime claude --target "$TD" --config "$CFG3/oldtools.yaml" --apply 2>&1)"; rc=$?
+assert_eq "an invented per-role tools list is refused" 2 "$rc"
+assert_contains "…pointing at required_permissions" "$out" "required_permissions"
 
 # --- unresolved policies and bad contracts are configuration errors -----------
 E="$(sandbox_new)"
-printf 'version: 2\npolicies:\n  default:\n    claude:\n      model: sonnet\n' > "$E/partial.yaml"
+printf 'version: 3\npolicies:\n  default:\n    claude:\n      model: sonnet\n' > "$E/partial.yaml"
 out="$($RENDER --runtime claude --target "$E" --config "$E/partial.yaml" --apply 2>&1)"; rc=$?
 assert_eq "an unbound policy is a configuration error" 2 "$rc"
 assert_contains "…naming the missing binding" "$out" "escalated"
 assert_contains "…and refusing to guess"      "$out" "no model is guessed"
 
-printf 'version: 1\npolicies:\n  default:\n    claude:\n      model: sonnet\n' > "$E/v1.yaml"
+printf 'version: 2\npolicies:\n  default:\n    claude:\n      model: sonnet\n' > "$E/v1.yaml"
 out="$($RENDER --runtime claude --target "$E" --config "$E/v1.yaml" --apply 2>&1)"; rc=$?
-assert_eq "an old routing schema version is rejected" 2 "$rc"
+assert_eq "the superseded routing schema version is rejected" 2 "$rc"
 
 out="$($RENDER --runtime claude --target "$E" --config "$E/absent.yaml" --apply 2>&1)"; rc=$?
 assert_eq "a missing routing file is a configuration error" 2 "$rc"
@@ -93,7 +169,7 @@ cp -r "$REPO_ROOT/roles" "$REPO_ROOT/contracts" "$REPO_ROOT/skills" "$REPO_ROOT/
 python3 -c "
 import json,sys
 p=sys.argv[1]+'/roles/catalog.json'
-d=json.load(open(p,encoding='utf-8')); d['contract_version']='0.3.0'
+d=json.load(open(p,encoding='utf-8')); d['contract_version']='0.9.0'
 json.dump(d,open(p,'w',encoding='utf-8'))" "$R"
 out="$($RENDER --runtime claude --target "$E" --root "$R" --config "$CFG" --apply 2>&1)"; rc=$?
 assert_eq "an unsupported contract version is rejected" 2 "$rc"
@@ -102,7 +178,7 @@ assert_contains "…without reinterpreting it" "$out" "will not reinterpret"
 python3 -c "
 import json,sys
 p=sys.argv[1]+'/roles/catalog.json'
-d=json.load(open(p,encoding='utf-8')); d['contract_version']='0.2.0'
+d=json.load(open(p,encoding='utf-8')); d['contract_version']='0.3.0'
 json.dump(d,open(p,'w',encoding='utf-8'))
 p=sys.argv[1]+'/roles/review.json'
 d=json.load(open(p,encoding='utf-8')); d['skill_refs']=['skills/not-a-real-skill/SKILL.md']

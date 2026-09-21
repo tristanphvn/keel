@@ -49,7 +49,7 @@ import re
 import subprocess
 import sys
 
-CONTRACT_VERSION = "0.2.0"
+CONTRACT_VERSION = "0.3.0"
 
 # --- YAML ---------------------------------------------------------------------
 # PyYAML when present; otherwise a parser for the restricted subset the routing
@@ -308,8 +308,33 @@ def load_routing(cfg_path, runtime, catalog):
     cfg = load_yaml(read_text(cfg_path), cfg_path)
     if not isinstance(cfg, dict):
         die(2, "%s: top level must be a mapping" % cfg_path)
-    if cfg.get("version") != 2:
-        die(2, "%s: version must be 2 (got %r)" % (cfg_path, cfg.get("version")))
+    if cfg.get("version") != 3:
+        die(2, "%s: version must be 3 (got %r). Version 3 replaced per-role `tools`"
+               " lists with a permission-class `tool_map`; see docs/routing.md."
+               % (cfg_path, cfg.get("version")))
+
+    # A per-role tool list invented by the adapter is behavioural policy: removing
+    # an execute tool can turn a role's result from completed into blocked. Under
+    # version 3 restrictions are derived from the role's declared
+    # `required_permissions` through this map, and an adapter-declared exception
+    # has to say so out loud (`tools_override` + `justification`).
+    tool_map = (cfg.get("tool_map") or {}).get(runtime)
+    if tool_map is not None and not isinstance(tool_map, dict):
+        die(2, "%s: tool_map.%s must be a mapping of permission class to tool names"
+               % (cfg_path, runtime))
+    for entry in ((cfg.get("roles") or {}).items()):
+        rid, spec = entry
+        spec = spec or {}
+        per = spec.get(runtime) or {}
+        if "tools" in per:
+            die(2, "%s: role %r still uses `tools:`. Version 3 derives tool limits from "
+                   "the role's required_permissions; use `tools_override` with a "
+                   "`justification` if an adapter-declared exception is genuinely needed."
+                   % (cfg_path, rid))
+        if per.get("tools_override") is not None and not per.get("justification"):
+            die(2, "%s: role %r sets tools_override without a justification. An "
+                   "adapter-declared restriction must be visible, not silent."
+                   % (cfg_path, rid))
 
     policies = cfg.get("policies") or {}
     errors = []
@@ -333,6 +358,46 @@ def role_options(cfg, rid, runtime):
     entry = (cfg.get("roles") or {}).get(rid) or {}
     opts = entry.get(runtime) or {}
     return entry, opts
+
+
+def effective_tools(role, cfg, opts, runtime):
+    """The tool allowlist for a role, and where it came from.
+
+    Three outcomes, deliberately distinguishable in the generated file:
+
+      contract   derived from the role's `required_permissions` through the
+                 adapter's tool_map. Deterministic: same contract plus same map
+                 gives the same list on every machine.
+      adapter    an explicit `tools_override`, which the routing file must
+                 justify. Recorded as adapter-declared so nobody mistakes it for
+                 something the contract asked for.
+      none       the role declares no required_permissions and no override was
+                 given, so no restriction is emitted and the agent inherits.
+                 Less restrictive, and honestly attributed: the canonical model
+                 has not yet said what this role needs.
+    """
+    override = opts.get("tools_override")
+    if override:
+        return list(override), "adapter", opts.get("justification", "")
+
+    needed = role.get("required_permissions") or []
+    if not needed:
+        return None, "none", ""
+
+    tool_map = (cfg.get("tool_map") or {}).get(runtime) or {}
+    missing = [c for c in needed if not tool_map.get(c)]
+    if missing:
+        die(2, "role %s requires permission class(es) %s, which the %s tool_map does "
+               "not map to any tool. An unmapped class is a configuration error; the "
+               "renderer will not silently drop a capability the role needs."
+               % (role["id"], ", ".join(missing), runtime))
+
+    tools = []
+    for cls in needed:
+        for name in tool_map[cls]:
+            if name not in tools:
+                tools.append(name)
+    return tools, "contract", ""
 
 
 # --- instruction body ---------------------------------------------------------
@@ -397,19 +462,29 @@ def load_skill_bodies(role):
     return out
 
 
-def decide_delivery(role, entry, opts, runtime):
+def describe_tool_origin(origin, justification):
+    """Say where a tool limit came from, so adapter policy is never mistaken for
+    something the contract required."""
+    if origin == "contract":
+        return "derived from the role's required_permissions"
+    if origin == "adapter":
+        return "ADAPTER-DECLARED override - %s" % (justification or "no justification given")
+    return "none (role declares no required_permissions; the agent inherits)"
+
+
+def decide_delivery(role, entry, tools, runtime):
     """reference | preload, and why.
 
     Measured on Claude Code 2.1.220: a sub-agent given an explicit `tools` list
-    without `Skill` has no Skill tool and sees no skills at all. Preloading is
-    how a restricted role still receives its required instructions — the
-    alternative would be widening its permissions, which the contract forbids.
+    without `Skill` has no Skill tool and sees no skills at all, and a control
+    run with `reference` delivery confirmed such a child receives nothing.
+    Preloading is how a restricted role still receives its required
+    instructions, without widening its permissions, which the contract forbids.
     """
     explicit = entry.get("skill_delivery")
     if explicit in ("reference", "preload"):
         return explicit, "configured explicitly"
     if runtime == "claude":
-        tools = opts.get("tools")
         if tools is not None and "Skill" not in tools:
             return "preload", "tool restriction excludes the Skill tool"
         return "reference", "agent retains its Skill tool"
@@ -425,14 +500,14 @@ def render_claude(role, catalog, cfg, revision):
     entry, opts = role_options(cfg, role["id"], "claude")
     policy = role["model_policy_ref"]
     model = cfg["policies"][policy]["claude"]["model"]
-    delivery, why = decide_delivery(role, entry, opts, "claude")
+    tools, origin, justification = effective_tools(role, cfg, opts, "claude")
+    delivery, why = decide_delivery(role, entry, tools, "claude")
     skills_inline = load_skill_bodies(role) if delivery == "preload" else []
 
     head = ["---", "name: %s" % role["id"],
             "description: %s" % role["purpose"].replace("\n", " ")]
     if model:
         head.append("model: %s" % model)
-    tools = opts.get("tools")
     if tools:
         head.append("tools: %s" % ", ".join(tools))
     head.append("---")
@@ -442,6 +517,7 @@ def render_claude(role, catalog, cfg, revision):
                 (role["_ref"], CONTRACT_VERSION, revision))
     head.append("<!-- model policy: %s -> %s · skill delivery: %s (%s) -->" %
                 (policy, model, delivery, why))
+    head.append("<!-- tool limit: %s -->" % describe_tool_origin(origin, justification))
     head.append("")
     return "\n".join(head) + "\n" + execution_instructions(
         role, catalog, delivery, skills_inline, "")
@@ -455,7 +531,8 @@ def render_codex(role, catalog, cfg, revision):
     entry, opts = role_options(cfg, role["id"], "codex")
     policy = role["model_policy_ref"]
     binding = cfg["policies"][policy]["codex"]
-    delivery, why = decide_delivery(role, entry, opts, "codex")
+    tools, origin, justification = effective_tools(role, cfg, opts, "codex")
+    delivery, why = decide_delivery(role, entry, tools, "codex")
     skills_inline = load_skill_bodies(role) if delivery == "preload" else []
 
     body = execution_instructions(role, catalog, delivery, skills_inline, "")
@@ -463,6 +540,7 @@ def render_codex(role, catalog, cfg, revision):
         "# generated by scripts/routing/render.py — do not edit here",
         "# source: %s · contract %s · revision %s" % (role["_ref"], CONTRACT_VERSION, revision),
         "# model policy: %s · skill delivery: %s (%s)" % (policy, delivery, why),
+        "# tool limit: %s" % describe_tool_origin(origin, justification),
         "name = %s" % toml_str(role["id"]),
         "description = %s" % toml_str(role["purpose"].replace("\n", " ")),
         "model = %s" % toml_str(binding["model"]),
@@ -479,6 +557,29 @@ def render_codex(role, catalog, cfg, revision):
 
 
 RENDERERS = {"claude": (".md", render_claude), "codex": (".toml", render_codex)}
+
+
+def delivery_record(roles, cfg, runtime, revision):
+    """What this render delivered, per role, for a result's `delivered_skills`.
+
+    The contract lets a result record which skill bodies the adapter placed in,
+    or made available to, the executing context. Only the adapter knows that, so
+    the adapter writes it down here. It is a delivery claim and nothing more:
+    `preload` means the body was embedded in the generated instructions,
+    `reference` means it was named and left to be loaded. Neither says the
+    instructions were read, and no field in the contract claims that.
+    """
+    out = {"contract_version": CONTRACT_VERSION, "runtime": runtime,
+           "profile_revision": revision, "roles": {}}
+    for role in roles:
+        entry, opts = role_options(cfg, role["id"], runtime)
+        tools, _origin, _just = effective_tools(role, cfg, opts, runtime)
+        delivery, _why = decide_delivery(role, entry, tools, runtime)
+        out["roles"][role["id"]] = [
+            {"ref": s["ref"], "sha256": s["sha256"], "method": delivery}
+            for s in role["_skills"]
+        ]
+    return json.dumps(out, indent=2, sort_keys=True) + "\n"
 
 # Codex reads the instruction chain up to project_doc_max_bytes (32 KiB default).
 # An agent definition is a separate file, but a preloaded role can still grow
@@ -627,6 +728,16 @@ def main(argv):
         if args.apply:
             write_text(path, content)
             entries[path] = sha256_file(path)
+
+    # The delivery record is written only when the render itself succeeded: a
+    # record of what was delivered must never outlive a run that delivered
+    # nothing.
+    if args.apply and not collisions:
+        record_path = os.path.join(target, ".agent-skills",
+                                   "delivered-skills-%s.json" % args.runtime)
+        write_text(record_path, delivery_record(roles, cfg, args.runtime, revision))
+        entries[record_path] = sha256_file(record_path)
+        print("  record    %s" % record_path)
 
     if args.apply:
         write_manifest(target, entries)

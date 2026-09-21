@@ -73,6 +73,53 @@ reject escape        "a write path escaping the workspace"     "is contained"   
 reject blockcomplete "a completed result with a blocking item" "no blocking unresolved item"      depth
 reject replay        "re-accepting a dispatch"                 "has not already been accepted"    gap --ledger "$F/ledger.json"
 
+# --- the completed example is canonical, not synthetic ------------------------
+# Acceptance, evidence and delivery semantics are exercised by a shipped example,
+# so the contract cannot drift away from its own documentation unnoticed.
+out="$($V --semantic --task "$EX/task-completed.json" --result "$EX/result-completed.json" 2>&1)"; rc=$?
+assert_eq "the completed example passes semantic validation" 0 "$rc"
+assert_contains "…exercising evidence references" "$out" "references only existing evidence"
+assert_contains "…and every criterion recorded once" "$out" "recorded exactly once"
+assert_contains "…and delivery provenance"          "$out" "is declared by role"
+assert_contains "…and changed files in scope"       "$out" "within the write scope"
+
+$V --schema >/dev/null 2>&1
+assert_eq "…and the schema, as part of the canonical set" 0 $?
+
+# --- delivery provenance invariants (contract 0.3.0) --------------------------
+reject undeclared-skill "delivery of a skill the role never declared" "is declared by role" gap
+reject bad-digest       "a delivery digest that is not a sha256"      "carries a sha256 digest" depth
+reject dup-delivery     "the same skill claimed as delivered twice"   "refs are unique" depth
+
+# --- required_permissions is a floor inside the ceiling -----------------------
+# Two sibling arrays the schema cannot compare: a role that requires a permission
+# its own ceiling forbids is incoherent, and only the semantic layer sees it.
+R="$(sandbox_new)/root"
+mkdir -p "$R"
+cp -r "$REPO_ROOT/roles" "$REPO_ROOT/contracts" "$REPO_ROOT/skills" "$REPO_ROOT/rules" "$R/"
+
+python3 -c "
+import json, sys
+p = sys.argv[1] + '/roles/documentation.json'
+d = json.load(open(p, encoding='utf-8'))
+d['required_permissions'] = ['read', 'execute']   # ceiling is read, write
+json.dump(d, open(p, 'w', encoding='utf-8'))" "$R"
+out="$($V --semantic --root "$R" 2>&1)"; rc=$?
+assert_ne "a required permission outside the ceiling is rejected" 0 "$rc"
+assert_contains "…and named" "$out" "stay within its ceiling"
+
+$V --schema --root "$R" >/dev/null 2>&1
+assert_eq "…while the schema alone accepts it (why the semantic layer exists)" 0 $?
+
+python3 -c "
+import json, sys
+p = sys.argv[1] + '/roles/documentation.json'
+d = json.load(open(p, encoding='utf-8'))
+d['required_permissions'] = ['read']
+json.dump(d, open(p, 'w', encoding='utf-8'))" "$R"
+out="$($V --semantic --root "$R" 2>&1)"; rc=$?
+assert_eq "a floor inside the ceiling is accepted" 0 "$rc"
+
 # --- dependency graph ---------------------------------------------------------
 out="$($V --semantic --task "$F/cycle-a.json" --task "$F/cycle-b.json" 2>&1)"; rc=$?
 assert_ne "a dependency cycle is rejected" 0 "$rc"

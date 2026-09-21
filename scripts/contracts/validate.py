@@ -28,7 +28,7 @@ import os
 import re
 import sys
 
-CONTRACT_VERSION = "0.2.0"
+CONTRACT_VERSION = "0.3.0"
 BAD_REF = re.compile(r"^(/|[A-Za-z]:)|(^|/)\.\.(/|$)|\\")
 
 
@@ -136,6 +136,14 @@ def semantic_canonical(root, rep):
         rep.check("role %s uses a declared model policy" % rid,
                   role.get("model_policy_ref") in policies,
                   repr(role.get("model_policy_ref")))
+        # required_permissions is the floor; permission_ceiling is the bound.
+        # A floor outside the bound is incoherent, and the schema cannot compare
+        # two sibling arrays.
+        needed = set(role.get("required_permissions") or [])
+        ceiling = set(role.get("permission_ceiling") or [])
+        if needed:
+            rep.check("role %s required_permissions stay within its ceiling" % rid,
+                      needed <= ceiling, "excess: %s" % sorted(needed - ceiling))
         refs = role.get("skill_refs") or []
         rep.check("role %s declares at least one skill" % rid, bool(refs))
         for sref in refs:
@@ -231,8 +239,43 @@ def detect_cycles(graph):
     return None
 
 
-def semantic_result(task, result, rep, ledger=None):
+def semantic_delivered_skills(task, result, roles, rep):
+    """Check the adapter's delivery claim against the role that was dispatched.
+
+    What this can establish: the adapter named skills the role actually declares,
+    identified them by a well-formed digest, and did not name the same one twice.
+
+    What it cannot establish, and never claims: that the instructions reached the
+    model's context, or that the model relied on them. `method` records which
+    mechanism the adapter used, and `reference` is the weaker claim of the two —
+    the skill was made available, not placed in context.
+    """
+    prov = result.get("provenance") or {}
+    delivered = prov.get("delivered_skills")
+    if delivered is None:
+        return
+    role = roles.get(task.get("role_id")) or {}
+    declared = set(role.get("skill_refs") or [])
+    refs = [d.get("ref") for d in delivered]
+
+    rep.check("delivered_skills refs are unique", len(refs) == len(set(refs)),
+              "duplicates: %s" % sorted(r for r in set(refs) if refs.count(r) > 1))
+    for d in delivered:
+        ref = d.get("ref")
+        rep.check("delivered skill %r is declared by role %r"
+                  % (ref, task.get("role_id")), ref in declared,
+                  "role declares: %s" % sorted(declared))
+        digest = d.get("sha256") or ""
+        rep.check("delivered skill %r carries a sha256 digest" % ref,
+                  bool(re.match(r"^[a-f0-9]{64}$", digest)), repr(digest))
+        rep.check("delivered skill %r names a known delivery method" % ref,
+                  d.get("method") in ("preload", "reference"), repr(d.get("method")))
+
+
+def semantic_result(task, result, rep, ledger=None, roles=None):
     tid = task.get("task_id")
+    if roles:
+        semantic_delivered_skills(task, result, roles, rep)
 
     # Dispatch identity: all three fields must be echoed exactly.
     rep.check("result echoes task_id", result.get("task_id") == tid,
@@ -353,7 +396,7 @@ def main(argv):
                 rep.check("result %s matches a supplied task" % os.path.basename(path), False,
                           "no task with task_id %r was provided" % result.get("task_id"))
                 continue
-            semantic_result(task, result, rep, ledger)
+            semantic_result(task, result, rep, ledger, roles)
         rc |= rep.done()
 
     return rc

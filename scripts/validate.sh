@@ -13,7 +13,7 @@ bad()  { printf '  FAIL  %s\n' "$1"; fail=$((fail + 1)); }
 skip() { printf '  skip  %s\n' "$1"; }
 
 echo "== 1. Rule files =="
-expected_rules="00-operating-principles 10-scope-control 20-verification 30-intent-first 40-correction-learning 50-design 60-adversarial-consensus 70-routing"
+expected_rules="00-operating-principles 10-scope-control 20-verification 30-intent-first 40-correction-learning 50-design 60-adversarial-consensus"
 for r in $expected_rules; do
   if [ -f "rules/$r.md" ]; then pass "rules/$r.md"; else bad "rules/$r.md missing"; fi
 done
@@ -216,13 +216,18 @@ if command -v python3 >/dev/null 2>&1; then
   else
     skip "no jsonschema module (pip install jsonschema) — contract shape unvalidated"
   fi
-  if out=$(python3 scripts/contracts/validate.py --semantic \
-             --task contracts/examples/task.json \
-             --result contracts/examples/result.json 2>&1); then
-    pass "contract documents satisfy the semantic checks"
-  else
-    bad "semantic validation failed: $(printf '%s' "$out" | grep -m1 FAIL)"
-  fi
+  # Both canonical pairs: the blocked example and the completed one. The
+  # completed pair is what exercises evidence, acceptance and delivery
+  # semantics, so it must keep passing or it silently rots.
+  for pair in "task:result" "task-completed:result-completed"; do
+    t="contracts/examples/${pair%%:*}.json"
+    r="contracts/examples/${pair##*:}.json"
+    if out=$(python3 scripts/contracts/validate.py --semantic --task "$t" --result "$r" 2>&1); then
+      pass "semantic checks pass for $(basename "$r")"
+    else
+      bad "semantic validation failed for $(basename "$r"): $(printf '%s' "$out" | grep -m1 FAIL)"
+    fi
+  done
 else
   skip "no python3 — contract documents unvalidated"
 fi

@@ -1,18 +1,14 @@
 # Adapter-owned routing configuration — EXAMPLE. Copy to models.yaml and edit.
 #
-# The agent-work contract (0.2.0) defines LOGICAL model policies — `default` and
-# `escalated` — and deliberately defines no model names, providers, prices or
-# reasoning settings. This file is where those logical policies are bound to
-# concrete identifiers, per runtime. It is owned by the adapter, not by the
-# contract: changing a binding here changes no role profile and no skill body.
+# The agent-work contract (0.3.0 draft) defines LOGICAL model policies —
+# `default` and `escalated` — and permission CLASSES. It defines no model names,
+# no providers, no reasoning settings and no tool names, because all four are
+# runtime-specific. Binding them is this file's job, and only this file's job.
 #
 # It holds no role definitions. Roles come from roles/catalog.json and the
 # roles/<id>.json profiles; there is exactly one role source.
-#
-# A policy the catalog declares but this file does not bind is a configuration
-# error. The renderer stops. It never guesses a model name.
 
-version: 2
+version: 3
 
 # --- logical policy -> concrete model ----------------------------------------
 policies:
@@ -26,49 +22,70 @@ policies:
     claude:
       model: opus
     codex:
-      model: gpt-5.6         # EXAMPLE — bind to the model you have verified
+      model: gpt-5.6         # EXAMPLE — bind to a model you have verified
       reasoning: high
 
 # Reasoning is bound per policy, not per model: the same model is used at
 # different depths. Claude Code documents no per-agent reasoning key, so none is
 # emitted there — see docs/runtime-capabilities.md rather than inventing one.
 
-# --- per-role runtime options ------------------------------------------------
-# Optional. Keyed by the role ids in roles/catalog.json. Nothing here changes a
-# role's responsibilities, boundaries or criteria — only how the runtime is
-# configured to execute it.
+# --- permission class -> runtime tool names ----------------------------------
+# The contract says what a role NEEDS, in runtime-independent permission classes.
+# This map says which tools of this runtime provide each class. The renderer
+# derives a role's tool limit from its `required_permissions` through this map,
+# so the same contract plus the same map produces the same limit on every
+# machine — and no adapter decides, per role, what a role is allowed to do.
 #
-#   claude.tools     explicit tool allowlist. Omit to inherit the parent's set.
-#   codex.sandbox_mode   read-only | workspace-write
-#   skill_delivery   reference | preload — override the automatic choice
+# A class a role requires but this map does not cover is a configuration error:
+# the renderer stops rather than silently dropping a capability the role needs.
+tool_map:
+  claude:
+    read:     [Read, Grep, Glob]
+    write:    [Write, Edit]
+    execute:  [Bash]
+    network:  [WebSearch, WebFetch]
+    delegate: [Agent]
+  codex:
+    # Codex tool identifiers are not verified here — the CLI was not installed.
+    # Left empty on purpose: an empty class fails loudly when a role requires it,
+    # which is better than a guessed tool name that silently does nothing.
+    read:     []
+    write:    []
+    execute:  []
+    network:  []
+    delegate: []
+
+# --- per-role runtime options ------------------------------------------------
+# Optional, keyed by the role ids in roles/catalog.json. Nothing here changes a
+# role's responsibilities, boundaries or criteria.
+#
+#   codex.sandbox_mode      read-only | workspace-write
+#   skill_delivery          reference | preload — override the automatic choice
+#   <runtime>.tools_override + justification
+#                           an adapter-declared tool limit, for the case the
+#                           contract does not cover. It REQUIRES a justification,
+#                           and the generated file is stamped ADAPTER-DECLARED so
+#                           nobody mistakes it for something the contract asked
+#                           for. Prefer populating the role's required_permissions.
 #
 # Skill delivery, measured on Claude Code 2.1.220: an agent given an explicit
-# `tools` list without `Skill` has no Skill tool, and therefore receives no
-# skills at all. Where a role's tools are restricted, the renderer PRELOADS the
-# canonical skill bodies into the generated instructions instead of widening the
-# permission. The copies carry their source path, sha256 and revision.
+# tool list without `Skill` has no Skill tool, and a control run confirmed such a
+# child receives no skill text at all under `reference` delivery. Where a role's
+# tools are limited, the renderer PRELOADS the canonical skill bodies instead of
+# widening the permission. The copies carry their source path and sha256.
 roles:
-  review:
-    claude:
-      tools: [Read, Grep, Glob, Bash]
-    codex:
-      sandbox_mode: read-only
-  security:
-    claude:
-      tools: [Read, Grep, Glob, Bash]
-    codex:
-      sandbox_mode: read-only
-  research:
-    claude:
-      tools: [Read, Grep, Glob, WebSearch, WebFetch]
-  critical-thinking:
-    claude:
-      tools: [Read, Grep, Glob]
   documentation:
     codex:
       sandbox_mode: workspace-write
+  review:
+    codex:
+      sandbox_mode: read-only
+  security:
+    codex:
+      sandbox_mode: read-only
 
-# Escalation binding, for reference: a role whose profile carries
-# `model_policy_ref: escalated` resolves through policies.escalated above. The
-# contract's budget (one escalation per task by default) is enforced by the
-# orchestrator, not by this file — rendering a definition grants nothing.
+# Until the canonical role profiles declare `required_permissions`, roles render
+# with no tool limit and inherit the parent's tools. That is deliberately visible
+# rather than patched over here: the canonical model has not yet stated what each
+# role needs, and an adapter inventing the answer is the defect this version
+# removed. See docs/decisions/0001-contract-c1-c5.md.

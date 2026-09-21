@@ -88,6 +88,31 @@ def main(argv):
                         "next_action": "fix it"}]
     write(out, "blockcomplete", t, r)
 
+    # --- delivery provenance (contract 0.3.0) --------------------------------
+    # The completed pair is the one that carries delivered_skills, so the
+    # delivery mutations are built from it.
+    task1 = json.load(open(os.path.join(ex, "task-completed.json"), encoding="utf-8"))
+    result1 = json.load(open(os.path.join(ex, "result-completed.json"), encoding="utf-8"))
+
+    def pair1():
+        return copy.deepcopy(task1), copy.deepcopy(result1)
+
+    # Claiming delivery of a skill the role never declared.
+    t, r = pair1()
+    r["provenance"]["delivered_skills"][0]["ref"] = "skills/review-code/SKILL.md"
+    write(out, "undeclared-skill", t, r)
+
+    # A digest that is not a sha256 — traceability that cannot be checked.
+    t, r = pair1()
+    r["provenance"]["delivered_skills"][0]["sha256"] = "not-a-digest"
+    write(out, "bad-digest", t, r)
+
+    # The same skill claimed twice.
+    t, r = pair1()
+    r["provenance"]["delivered_skills"].append(
+        dict(r["provenance"]["delivered_skills"][0]))
+    write(out, "dup-delivery", t, r)
+
     # --- dependency graphs ----------------------------------------------------
 
     a, _ = pair(); a["task_id"] = "t-cycle-a"; a["dependencies"] = ["t-cycle-b"]
