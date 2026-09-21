@@ -32,5 +32,8 @@
     "read",
     "write",
     "network"
+  ],
+  "required_permissions": [
+    "read"
   ]
 }

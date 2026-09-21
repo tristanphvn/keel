@@ -36,5 +36,8 @@
     "read",
     "write",
     "execute"
+  ],
+  "required_permissions": [
+    "read"
   ]
 }
