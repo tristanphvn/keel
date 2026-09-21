@@ -61,6 +61,8 @@ rules|rules
 skills|skills
 registry|skill-registry
 commands|commands
+roles|roles
+contracts|contracts
 config/AGENTS.md|AGENTS.md
 config/learned-rules.md|learned-rules.md
 "
@@ -153,7 +155,7 @@ EOF
 
 # Directories this installer created are removed only when empty, so a
 # machine-only file left inside one keeps its directory alive.
-for d in "$DEST/rules" "$DEST/skill-registry" "$DEST/commands" "$SKILLS_DEST"; do
+for d in "$DEST/rules" "$DEST/skill-registry" "$DEST/commands" "$DEST/roles" "$DEST/contracts" "$SKILLS_DEST"; do
   [ -d "$d" ] || continue
   find "$d" -depth -type d -empty -exec rmdir {} + 2>/dev/null
 done

@@ -43,11 +43,16 @@ APPLY=0
 # repo path | destination path RELATIVE to $DEST.
 # The destination is kept relative on purpose: $DEST is never word-split, so a
 # configuration directory containing spaces installs correctly.
+# roles/ and contracts/ are installed because role profiles reference skills by
+# repository-relative path: those references have to stay resolvable on the
+# machine, not only in the checkout.
 PAIRS="
 rules|rules
 skills|skills
 registry|skill-registry
 commands|commands
+roles|roles
+contracts|contracts
 config/AGENTS.md|AGENTS.md
 config/learned-rules.md|learned-rules.md
 "

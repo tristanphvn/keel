@@ -47,6 +47,21 @@ assert_contains    "local-only content is reported, not deleted" "$out" "LOCAL-O
 leftover="$(grep -rlF '{{AGENT_HOME}}' "$H/rules" "$H/skill-registry" "$H/commands" 2>/dev/null | wc -l)"
 assert_eq "no unrendered {{AGENT_HOME}} tokens remain" 0 "$leftover"
 
+# Contract resources must be installed, not only present in the checkout: role
+# profiles reference skills by repository-relative path, and those references
+# have to resolve on the machine.
+assert_file_exists "role catalog installed"   "$H/roles/catalog.json"
+assert_file_exists "role profile installed"   "$H/roles/review.json"
+assert_file_exists "contract schema installed" "$H/contracts/agent-work.schema.json"
+if command -v python3 >/dev/null 2>&1; then
+  out="$(python3 "$REPO_ROOT/scripts/routing/render.py" --runtime claude \
+           --root "$H" --target "$(sandbox_new)" \
+           --config "$REPO_ROOT/config/routing/models.example.yaml" 2>&1)"
+  rc=$?
+  assert_eq "every role reference still resolves against the installed tree" 0 "$rc"
+  assert_contains "…for the whole canonical set" "$out" "14 role(s)"
+fi
+
 # --- repeat installation is predictable --------------------------------------
 fp1="$(tree_fingerprint "$H")"
 out="$(AGENT_HOME="$H" $INSTALL --apply 2>&1)"
