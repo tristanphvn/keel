@@ -6,8 +6,14 @@ Three separable steps. Each one previews by default and writes only with
 ```
 scripts/install.sh            shared config  ->  $AGENT_HOME
 scripts/adapters/<runtime>.sh $AGENT_HOME    ->  the runtime's own integration point
-scripts/routing/render.py     routing file   ->  runtime-native agent definitions  (optional)
+scripts/routing/render.py     role profiles  ->  runtime-native agent definitions  (optional)
 ```
+
+The installed tree carries `roles/` and `contracts/` as well as `rules/`,
+`skills/`, the registry and the commands. Role profiles reference skills by
+repository-relative path, so those references have to resolve on the machine and
+not only inside a checkout — `tests/test_installer.sh` renders the full
+canonical role set against the installed tree to prove they still do.
 
 The default installation depends on nothing project-specific. No vault, no
 issue tracker, no network. `skills/vault-rules` and `commands/setup-vault`
@@ -108,9 +114,26 @@ On a host that can create neither symlinks nor junctions, linking fails with a
 non-zero exit and names the supported alternative. It never falls back to
 copying — see the Windows section of the capability matrix for why.
 
-## 3. Routing (optional)
+## 3. Role rendering and routing (optional)
 
-See [routing.md](routing.md). Installation does not require it.
+Renders the 14 canonical role profiles into agent definitions and binds the
+contract's logical model policies to concrete models. See [routing.md](routing.md).
+Installation does not require it.
+
+## Validating contract documents
+
+```bash
+python3 scripts/contracts/validate.py --schema      # JSON Schema shape
+python3 scripts/contracts/validate.py --semantic    # cross-document meaning
+```
+
+Two modes, two results, deliberately not merged. The schema checks shape; it
+cannot check that an acceptance entry refers to a criterion the task declared,
+that an evidence ID exists, that a dependency graph is acyclic or that a
+dispatch is accepted only once. Neither mode is runtime enforcement: a valid
+document has not been executed, and no permission or budget has been enforced by
+validating it. `--schema` needs `jsonschema`; if it is absent the run reports it
+as unavailable and fails, rather than counting a skipped check as a pass.
 
 ## Removing
 

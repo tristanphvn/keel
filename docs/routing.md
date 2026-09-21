@@ -1,7 +1,7 @@
-# Role-to-model routing
+# Role rendering and model routing
 
-Maps role ids onto concrete provider/model identifiers per runtime, and renders
-one agent definition per role in the format each runtime actually reads.
+Turns the canonical role profiles into agent definitions each runtime can read,
+and binds the contract's logical model policies to concrete models.
 
 ```bash
 cp config/routing/models.example.yaml config/routing/models.yaml
@@ -12,105 +12,115 @@ python3 scripts/routing/render.py --runtime claude --target ~/.claude --check
 python3 scripts/routing/render.py --runtime claude --target ~/.claude --remove --apply
 ```
 
-Routing is **optional**. With no `models.yaml` the renderer prints that fact and
-exits 0; the installation is complete without it.
+## One role source
 
-## Boundary: what routing does not own
+`roles/catalog.json` and the `roles/<id>.json` profiles it lists are the only
+role source, against agent-work contract **0.2.0**. There is no second,
+hand-maintained copy: the renderer authors no purpose, responsibility, boundary
+or instruction text. Everything it emits is either copied from a canonical
+artifact or comes from adapter-owned routing configuration.
 
-Routing does not define roles. A role's purpose and its instructions are
-canonical artifacts owned outside this layer. Here a role is:
+Generated files are build outputs. Each records the source profile, the contract
+version and the distribution revision; each inlined skill body records its
+repository-relative path and sha256. Regenerating replaces them wholesale.
 
-- an opaque `id`,
-- a pointer to its `profile` file, and
-- the runtime-facing settings that decide which model runs it.
+The renderer refuses, with exit 2 and no partial write, when:
 
-The renderer copies instructions from the profile verbatim and **never authors
-them**. A role without a `profile` is a schema error. A profile without a
-`description`, or with an empty body, is a schema error. This is deliberate: a
-generated role instruction is a contract invented by the wrong component.
+- the catalog or a profile declares a `contract_version` other than 0.2.0 — it
+  will not reinterpret a version it does not implement;
+- a reference is absolute, traverses upward, or resolves outside the pinned
+  distribution root (symlinks are resolved before the check);
+- a referenced skill, rule or profile does not exist;
+- a role names a model policy the catalog does not declare;
+- a policy the catalog declares has no binding for the target runtime.
 
-Until canonical role profiles exist, keep `roles: []`. The renderer will say
-there is nothing to render, which is the correct state, not a failure.
+## Model policy binding
 
-## The three layers, kept separate
-
-| Layer | Key | Why separate |
-| --- | --- | --- |
-| Model selection | `catalog[].tier` → per-runtime `model` | A role names a tier, not an identifier, so re-pointing a tier changes every role at once. |
-| Reasoning | `reasoning.default`, `roles[].reasoning` | The same tier is used at different depths, and the runtimes express depth differently. |
-| Fallback | `fallback.*` | What happens when a request cannot be honoured is a policy decision, not a property of a model. |
-
-## Model identifiers
-
-Only identifiers verified against the runtime you target belong in `catalog`.
-Informal or marketing names are not API identifiers; they fail at spawn time or
-resolve to something you did not choose.
-
-Verification status lives in
-[runtime-capabilities.md](runtime-capabilities.md). At the time of writing:
-
-- **Claude Code** — the CLI aliases `opus`, `sonnet`, `haiku` are accepted in
-  agent frontmatter and were observed resolving to concrete model ids in the
-  session transcripts (`haiku` → `claude-haiku-4-5-20251001`). Verified.
-- **Codex** — the identifiers in the example file come from vendor
-  documentation examples and are **unverified here**, because the Codex CLI was
-  not installed. Replace them with identifiers you have confirmed.
-
-## Fallback policy
+The contract defines logical policies — `default` and `escalated` — and no model
+names, providers, prices or reasoning settings. `config/routing/models.yaml`
+binds them, per runtime:
 
 ```yaml
-fallback:
-  on_unknown_model: deny          # or: use_default
-  on_missing_capability: [degrade_to_inline, deny]
+version: 2
+policies:
+  default:
+    claude: {model: sonnet}
+    codex:  {model: gpt-5.6, reasoning: medium}
+  escalated:
+    claude: {model: opus}
+    codex:  {model: gpt-5.6, reasoning: high}
 ```
 
-- `on_unknown_model: deny` — a role asking for a tier with no model for the
-  target runtime is a schema error. Nothing is substituted silently. This is the
-  default, because a silent substitution means work runs on a model nobody
-  chose.
-- `on_missing_capability` — ordered steps when the runtime cannot do what the
-  role needs. `degrade_to_inline` means: run the role's instructions in the
-  current session instead of a separate agent, and say so. `deny` means fail
-  loudly.
+An unresolved policy is a configuration error. No model name is ever guessed,
+and no role is quietly run on a substitute.
 
-Capability gaps that currently trigger this, with their measured status, are
-listed in the capability matrix. One worth stating here: **Claude Code
-documents no per-agent reasoning setting**, so the renderer emits no reasoning
-key for that runtime rather than inventing one. The value is still used for
-Codex.
+Verification status of the identifiers themselves is in
+[runtime-capabilities.md](runtime-capabilities.md): the Claude aliases are
+verified against session transcripts; the Codex identifiers are examples, since
+that CLI was not installed. Reasoning is bound per policy — Claude Code
+documents no per-agent reasoning key, so none is emitted there.
 
-## Rendered output
+Per-role runtime options live in the same file, keyed by role id:
 
-| Runtime | Path | Format |
+```yaml
+roles:
+  review:
+    claude: {tools: [Read, Grep, Glob, Bash]}
+    codex:  {sandbox_mode: read-only}
+```
+
+These change how the runtime is configured, never what the role is. A tool list
+or a sandbox mode grants nothing on its own — the contract's permission ceiling
+is an upper bound, and enforcement belongs to the runtime.
+
+## Skill delivery
+
+Every role must actually receive its `skill_refs`. Two mechanisms:
+
+| Mechanism | When | What the agent gets |
 | --- | --- | --- |
-| `claude` | `<target>/agents/<id>.md` | YAML frontmatter: `name`, `description`, `model`, optional `tools`; body = profile instructions |
-| `codex` | `<target>/agents/<id>.toml` | `name`, `description`, `developer_instructions`, optional `model`, `model_reasoning_effort`, `sandbox_mode` |
+| `reference` | the agent keeps its `Skill` tool | canonical paths, loaded by the agent |
+| `preload` | the role's tools are restricted | the canonical bodies, inlined with provenance |
 
-A caution measured on Claude Code: restricting a sub-agent's `tools` removes its
-access to skills unless `Skill` is in the list. Omit `tools` to inherit the
-parent's set.
+Chosen automatically; override per role with `skill_delivery`.
+
+The reason is measured, not assumed. On Claude Code 2.1.220, an agent given an
+explicit `tools` list without `Skill` has no Skill tool — and a control run
+confirmed such a child receives **no** skill text when delivery is `reference`.
+Preloading closes that gap without widening the agent's permissions. Both arms
+of that experiment are recorded in the capability matrix.
+
+Preloaded copies are build outputs, not a second source: each is wrapped in
+`<!-- begin canonical skill: <path> sha256=... -->` markers, and the profile
+continues to point at the canonical file.
+
+## Instruction budget
+
+Preloading makes a role's instructions much larger. `--budget N` sets a
+per-file limit; Codex defaults to 32768 bytes, mirroring
+`project_doc_max_bytes`. Claude Code documents no equivalent limit, so its
+default is unlimited — that is a documented absence, not a measured one.
+
+Over budget, the renderer fails the whole run before writing anything and names
+the offending roles. Required instructions are never truncated: raise the
+runtime's limit, or move those roles to `skill_delivery: reference` and accept
+that they need their Skill tool.
 
 ## Ownership
 
-Every rendered file is recorded with its hash in
+Rendered files are recorded with their hashes in
 `<target>/.agent-skills/routing-manifest.tsv`.
 
-- A file at the target path that is **not** in the manifest is a collision: it
-  is reported, the run exits non-zero, and nothing is overwritten.
-- `--remove` deletes only manifest entries whose content still matches. An
-  edited file is reported as `KEPT (modified since render)`.
-- `--check` fails if a rendered file is missing, stale, or unowned.
+- A file at a target path that is not in the manifest is a collision: reported,
+  non-zero exit, never overwritten.
+- `--remove` deletes only manifest entries whose content still matches; an
+  edited file is `KEPT (modified since render)`.
+- `--check` fails on a missing, stale or unowned file.
 
 ## Config format
 
-YAML, parsed with PyYAML when it is installed. When it is not, a parser for a
-restricted subset is used instead, so routing works on a bare Git Bash machine:
-
-- 2-space indentation, `key: value` mappings
-- `- ` sequences of scalars or of mappings
-- inline `[a, b]` flow sequences
-- `#` comments
-- scalars: quoted strings, bare strings, integers, `true`/`false`, `null`
-
-Anything outside the subset is an error with a file and line number, never a
-guess. Validation errors exit 2; collisions and write failures exit 1.
+YAML, parsed with PyYAML when installed; otherwise a restricted subset parser
+(2-space indent, `key: value`, `- ` sequences, inline `[a, b]`, `#` comments,
+quoted/bare/int/bool/null scalars) so routing works on a bare Git Bash machine.
+Anything outside the subset is an error with a line number. The contract itself
+is JSON and never depends on this.

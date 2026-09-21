@@ -171,3 +171,62 @@ not a leak.
 
 Unchanged: every rule ID and rule body, all skill logic and skill names, the registry structure,
 `config/AGENTS.md`, and checks 1–7.
+
+## 2026-09-21 — integration: contract 0.2.0 consumed by the adapters
+
+Merge of `codex/agent-behavior-contracts-v1` (`07ed82d`) into the adapter branch
+(`d99a739`). Both histories preserved; the registry merged cleanly, keeping the earlier
+`conventions.skill_path` YAML fix alongside Codex's nine lifecycle entries and the
+promotion of `sec-security-review`. No rule body, skill body, role profile or contract
+document was edited by this pass.
+
+The renderer now consumes the contract instead of a hand-maintained role file. Its single
+source is `roles/catalog.json` and the profiles it references; the previous example-only
+role format is gone, and with it the second place a role could have been defined.
+Generated agent definitions carry purpose, responsibilities, boundaries, inputs, outputs,
+completion criteria, permission ceiling, capabilities and canonical skill references, plus
+provenance: source profile, contract version, distribution revision, and a sha256 per
+inlined skill body. All 14 canonical roles render for both runtimes.
+
+Rejections are hard and produce no partial write: a `contract_version` other than 0.2.0,
+a reference that is absolute, traversing or resolving outside the pinned root, a missing
+skill/rule/profile, a policy the catalog does not declare, and a policy with no binding
+for the target runtime. Logical policies `default` and `escalated` are bound in
+adapter-owned `config/routing/models.yaml`; an unresolved policy is a configuration
+error, never a guessed model name.
+
+Skill delivery under tool restriction was the open question from the previous pass, and it
+was settled by experiment rather than argument. Two arms, same role, same restricted tool
+set, differing only in delivery. With `reference`, the child reported NOT-PRESENT: the
+restriction had removed the Skill tool, so referencing a skill delivered nothing. With
+`preload`, the same restricted child quoted the canonical skill text verbatim. Preloading
+therefore delivers the required instructions without widening any permission. Preloaded
+bodies are build outputs, marker-wrapped and hashed; the profile still points at the
+canonical file. Model binding was confirmed in the same runs: the rendered role's
+`model: sonnet` produced a `claude-sonnet-5` child under a `claude-haiku-4-5-20251001`
+parent, read from the session transcripts.
+
+Because preloading grows instructions, the renderer enforces a per-file budget (32 KiB
+default for Codex, mirroring `project_doc_max_bytes`) and fails the whole run before
+writing when a role exceeds it. Required instructions are never truncated.
+
+Contract validation is split in two, and reported as two results: JSON Schema shape, and
+the cross-document semantics the schema cannot express — dispatch identity echo, criterion
+ID uniqueness where the IDs differ only by description, evidence resolution, permission
+ceiling subset, write-path containment, changed files inside the write scope, dependency
+existence/self-reference/cycles, attempt within budget, and single acceptance per dispatch.
+Eight of the eleven negative fixtures are accepted by the schema and caught only by the
+semantic layer; three are caught by both, asserted so a later schema relaxation cannot
+remove the only check standing.
+
+`roles/` and `contracts/` are now installed, under the same manifest ownership, collision
+and removal rules as everything else, so role→skill references resolve on the machine and
+not only in a checkout. The installer test renders the full canonical set against the
+installed tree to prove it.
+
+Neither renderer validation nor schema validation is runtime enforcement, and the
+capability matrix says so per capability: `spawn` and `model-selection` are verified on
+Claude Code 2.1.220; `tool-isolation` is recorded as requested-but-not-proven, since a
+child reporting a restricted tool list is not the runtime refusing a forbidden call;
+`fresh-context` and `workspace-isolation` are unmeasured. Every Codex row remains
+documented-not-measured — that CLI is still not installed.

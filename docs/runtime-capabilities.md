@@ -62,6 +62,41 @@ for.
 3. Restricting a sub-agent's tools silently removes its access to skills. A role
    that needs skills must not be given a `tools:` list that omits `Skill`.
 
+## Contract 0.2.0 integration — measured on Claude Code 2.1.220
+
+Two arms of one controlled experiment, same canonical role (`review`), same tool
+restriction (`Read, Grep, Glob, Bash`), differing only in how its `skill_refs`
+were delivered. The canary is a sentence that appears only in
+`skills/review-code/SKILL.md`.
+
+| Arm | Skill delivery | Child has `Skill` tool | Child has the skill text |
+| --- | --- | --- | --- |
+| A | `preload` (renderer inlines the canonical bodies) | no | **yes** — quoted verbatim |
+| B | `reference` (child told to load it itself) | no | **no** — reported `NOT-PRESENT` |
+
+Arm B is the control, and it is the point: under a tool restriction, referencing
+a skill delivers nothing at all, because the restriction removed the tool that
+would load it. Preloading delivers the required instructions **without widening
+the permission** — the alternative the contract forbids.
+
+Model selection was read from the session transcripts in the same runs: the
+rendered role carried `model: sonnet` and its sub-agent ran `claude-sonnet-5`
+while the parent ran `claude-haiku-4-5-20251001`. Per-role model binding from
+adapter-owned routing configuration therefore reaches the runtime.
+
+| Contract capability | Claude Code 2.1.220 | Evidence |
+| --- | --- | --- |
+| `spawn` | yes | sub-agent created and its result collected |
+| `model-selection` | yes | transcript model differs from the parent's, as bound |
+| `tool-isolation` | requested, **not proven enforced** | the child reported exactly the configured tools; that is the child's report plus the absence of skills, not an observation of the runtime refusing a call |
+| `fresh-context` | not measured | no probe distinguishes a fresh context from an inherited one |
+| `workspace-isolation` | not measured | no separate writable workspace was requested |
+
+`tool-isolation` is deliberately not claimed as verified. Proving enforcement
+needs a child that *attempts* a forbidden call and is refused; what was observed
+is a child that reports a restricted tool list. Until that test exists, treat the
+capability as requested-not-enforced, which the contract counts as unavailable.
+
 ## Windows link support — measured
 
 | Mechanism | Result |
