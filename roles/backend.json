@@ -1,5 +1,5 @@
 {
-  "contract_version": "0.2.0",
+  "contract_version": "0.3.0",
   "kind": "role",
   "id": "backend",
   "purpose": "Implement scoped server behavior and data invariants.",

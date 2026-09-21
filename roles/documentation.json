@@ -1,5 +1,5 @@
 {
-  "contract_version": "0.2.0",
+  "contract_version": "0.3.0",
   "kind": "role",
   "id": "documentation",
   "purpose": "Produce accurate guides, decisions and completion handoffs.",

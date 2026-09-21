@@ -20,7 +20,7 @@
       "type": "object",
       "properties": {
         "contract_version": {
-          "const": "0.2.0"
+          "const": "0.3.0"
         },
         "kind": {
           "const": "role"
@@ -132,6 +132,20 @@
           },
           "minItems": 0,
           "uniqueItems": true
+        },
+        "required_permissions": {
+          "type": "array",
+          "items": {
+            "enum": [
+              "read",
+              "write",
+              "execute",
+              "network",
+              "delegate"
+            ]
+          },
+          "uniqueItems": true,
+          "description": "Permission classes without which this role cannot discharge its responsibilities: a floor, where permission_ceiling is the bound, and a subset of it. Adapters map these classes onto runtime-specific tool identifiers; the contract never names tools."
         }
       },
       "required": [
@@ -156,7 +170,7 @@
       "type": "object",
       "properties": {
         "contract_version": {
-          "const": "0.2.0"
+          "const": "0.3.0"
         },
         "kind": {
           "const": "task"
@@ -424,7 +438,7 @@
       "type": "object",
       "properties": {
         "contract_version": {
-          "const": "0.2.0"
+          "const": "0.3.0"
         },
         "kind": {
           "const": "result"
@@ -483,6 +497,36 @@
             "workspace_revision": {
               "type": "string",
               "minLength": 1
+            },
+            "delivered_skills": {
+              "type": "array",
+              "uniqueItems": true,
+              "description": "What the adapter placed in, or made available to, the executing context. An adapter claim about delivery; never evidence that the instructions were relied upon. No field asserts reliance.",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "ref": {
+                    "type": "string",
+                    "pattern": "^(?!/)(?![A-Za-z]:)(?!.*\\\\)(?!.*(?:^|/)\\.\\.(?:/|$))[^\\u0000-\\u001f]+$"
+                  },
+                  "sha256": {
+                    "type": "string",
+                    "pattern": "^[a-f0-9]{64}$"
+                  },
+                  "method": {
+                    "enum": [
+                      "preload",
+                      "reference"
+                    ]
+                  }
+                },
+                "required": [
+                  "ref",
+                  "sha256",
+                  "method"
+                ],
+                "additionalProperties": false
+              }
             }
           },
           "required": [
@@ -711,7 +755,7 @@
       "type": "object",
       "properties": {
         "contract_version": {
-          "const": "0.2.0"
+          "const": "0.3.0"
         },
         "kind": {
           "const": "catalog"

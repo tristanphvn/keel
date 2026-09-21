@@ -1,4 +1,22 @@
-# Agent work contract — 0.2.0 draft
+# Agent work contract — 0.3.0 draft
+
+> **0.3.0 supersedes 0.2.0.** Three optional additions and no removals, but the
+> version moved because this document requires it: "Any schema/enum change
+> requires a new contract version", and every definition sets
+> `additionalProperties: false`, so a 0.2.0 reader must reject a document
+> carrying the new fields. Keeping the old version number would have produced
+> exactly the silent incompatibility that rule exists to prevent.
+>
+> | Change | Where | Why |
+> | --- | --- | --- |
+> | optional `required_permissions` | role | a permission floor, so tool limits stop being invented by adapters |
+> | optional `delivered_skills` | result provenance | records which skill bodies an adapter delivered, and by which mechanism |
+> | second canonical example pair | `contracts/examples/*-completed.json` | acceptance and evidence semantics exercised by shipped documents, not only by synthetic fixtures |
+>
+> Rationale and the rejected alternatives: `docs/decisions/0001-contract-c1-c5.md`.
+> Still draft. Not stable. The 0.2.0 delivery records in
+> `docs/orchestration-validation.md` and `docs/orchestration-handoff.md` describe
+> that version as shipped and are deliberately left unedited.
 
 This is the canonical, runtime-independent interface between role/skill authors
 and adapter implementers. It describes behavior and data, not an executable
@@ -79,6 +97,23 @@ and `delegate`. A role's `permission_ceiling` is an upper bound, not a grant.
 Task permissions must be a subset of that ceiling and intersect with platform
 restrictions and actual user authorization. Capability flags also grant nothing.
 
+A role may also declare optional `required_permissions`: the classes without
+which it cannot discharge its responsibilities. Where `permission_ceiling` is the
+upper bound, this is the floor, and it must be a subset of the ceiling. It exists
+so that least privilege has something to be computed from: an adapter that has to
+choose a tool limit with only a ceiling available will either grant everything or
+invent a restriction, and an invented restriction is behavioural — a role denied
+an execute tool reports `blocked` rather than doing its work.
+
+**Tool identifiers are adapter-owned.** The contract names permission classes and
+never tool names, because the names are runtime-specific. An adapter maps classes
+onto its own tools and must do so deterministically: the same profile and the
+same mapping produce the same limit on every machine. An adapter may still apply
+a limit the contract did not ask for — operators have legitimate reasons — but it
+must be recorded as adapter-declared rather than presented as a contract
+requirement. A role that declares no `required_permissions` has not yet stated
+what it needs, and the honest rendering is no restriction at all.
+
 `write_paths` are explicit workspace-relative files or directory prefixes
 (directory prefixes end in `/`), not shell globs. Empty means no writes. Include
 fixtures, logs and test output where needed; command execution can write files
@@ -139,6 +174,24 @@ instruction to send a message or automatically launch another task. The
 orchestrator resolves an actual recipient execution and checks authorization.
 
 ## Result and completion semantics
+
+Provenance may carry optional `delivered_skills`: `{ref, sha256, method}` per
+skill, where `method` is `preload` (the body was embedded in the instructions the
+adapter generated) or `reference` (the skill was named and left to be loaded).
+Four stages are distinguishable, and only the first three are representable:
+
+| Stage | Established by |
+| --- | --- |
+| declared by the role | the role's `skill_refs` |
+| resolved to a canonical file | reference resolution plus the digest |
+| delivered into the executing context | this field — the adapter's own claim |
+| relied upon during execution | **nothing; no field asserts it** |
+
+`reference` is deliberately the weaker claim of the two: it records that a skill
+was made available, not that it reached the context. That distinction is not
+pedantic — a child whose tool limit removes its skill-loading tool receives
+nothing at all under `reference`, which has been observed on a real runtime.
+Recording delivery is never evidence that the instructions were read or followed.
 
 Results identify the task, dispatch and attempt, mechanism, observed runtime/model and
 source provenance. Use `unverified` when a runtime identity is not observable;

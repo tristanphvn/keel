@@ -1,5 +1,5 @@
 {
-  "contract_version": "0.2.0",
+  "contract_version": "0.3.0",
   "kind": "role",
   "id": "testing",
   "purpose": "Disprove or verify behavior through meaningful executed checks.",
