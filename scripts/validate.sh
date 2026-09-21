@@ -203,9 +203,33 @@ else
   skip "no python3 — registry and frontmatter unparsed"
 fi
 
-echo "== 10. Routing configuration =="
-# The example is what a user copies, so it has to stay valid against the
-# renderer's own schema. Rendering is a dry run into a throwaway directory.
+echo "== 10. Contract documents =="
+# Shape and semantics are two separate results. An unavailable validator is
+# reported as unavailable — never counted as a pass.
+if command -v python3 >/dev/null 2>&1; then
+  if python3 -c "import jsonschema" 2>/dev/null; then
+    if out=$(python3 scripts/contracts/validate.py --schema 2>&1); then
+      pass "contract documents satisfy the JSON Schema"
+    else
+      bad "schema validation failed: $(printf '%s' "$out" | grep -m1 FAIL)"
+    fi
+  else
+    skip "no jsonschema module (pip install jsonschema) — contract shape unvalidated"
+  fi
+  if out=$(python3 scripts/contracts/validate.py --semantic \
+             --task contracts/examples/task.json \
+             --result contracts/examples/result.json 2>&1); then
+    pass "contract documents satisfy the semantic checks"
+  else
+    bad "semantic validation failed: $(printf '%s' "$out" | grep -m1 FAIL)"
+  fi
+else
+  skip "no python3 — contract documents unvalidated"
+fi
+
+echo "== 11. Routing configuration =="
+# The example is what a user copies, so it has to keep rendering the canonical
+# role set. Rendering is a dry run into a throwaway directory.
 if command -v python3 >/dev/null 2>&1; then
   routing_tmp="$(mktemp -d)"
   for cfg in config/routing/models.example.yaml config/routing/models.yaml; do
