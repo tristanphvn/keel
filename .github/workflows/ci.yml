@@ -21,7 +21,7 @@ jobs:
       - run: bash scripts/validate.sh
 
   tests:
-    name: installer, adapters, routing (${{ matrix.os }})
+    name: installer, adapters, contracts, routing, capabilities (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -34,6 +34,11 @@ jobs:
         shell: bash
     steps:
       - uses: actions/checkout@v4
+      - name: Install validation dependencies
+        # test_contracts.sh and test_capabilities.sh fail loudly without
+        # jsonschema rather than skipping, which is the intended behaviour — so
+        # the runner has to have it. An unavailable checker is never a pass.
+        run: python3 -m pip install --user jsonschema pyyaml
       - run: bash tests/run.sh
 
   shellcheck:
@@ -46,4 +51,4 @@ jobs:
       - name: Lint scripts
         # -x follows `source` directives into lib/. Warnings are advisory;
         # errors fail the build.
-        run: shellcheck -x -S error scripts/*.sh scripts/adapters/*.sh scripts/lib/*.sh tests/*.sh tests/lib/*.sh
+        run: shellcheck -x -S error scripts/*.sh scripts/adapters/*.sh scripts/lib/*.sh tests/*.sh tests/lib/*.sh tests/probes/*.sh
