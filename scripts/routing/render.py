@@ -559,6 +559,114 @@ def render_codex(role, catalog, cfg, revision):
 RENDERERS = {"claude": (".md", render_claude), "codex": (".toml", render_codex)}
 
 
+# --- runtime capability gate --------------------------------------------------
+# Roles state what they require; a capability record states what a runtime was
+# measured to prove. The renderer matches the two and refuses when the evidence
+# does not reach the level the capability demands. It never decides either side.
+
+RUNTIME_FAMILY = {"claude": "claude-code", "codex": "codex"}
+
+
+def load_capability_record(path, repo_root):
+    rec = load_json_file(path)
+    if rec.get("record_version") != 1:
+        die(2, "%s: record_version %r is not supported; this renderer implements 1 exactly"
+               % (path, rec.get("record_version")))
+    if rec.get("kind") != "runtime-capability-record":
+        die(2, "%s: kind %r, expected 'runtime-capability-record'" % (path, rec.get("kind")))
+    for key in ("status", "runtime", "platform", "capabilities"):
+        if key not in rec:
+            die(2, "%s: capability record is missing %r" % (path, key))
+    if rec["status"] not in ("measured", "example"):
+        die(2, "%s: status %r is not recognised" % (path, rec["status"]))
+    rec["_path"] = path
+    rec["_requirements"] = evidence_requirements(repo_root)
+    return rec
+
+
+def evidence_requirements(repo_root):
+    """Required evidence level per capability, read from the record schema.
+
+    One definition, shared with scripts/capabilities/validate.py. A copy here
+    would be a second source of truth for what `enforced` means.
+    """
+    schema = load_json_file(os.path.join(repo_root, "capabilities",
+                                         "runtime-capability.schema.json"))
+    return schema["$defs"]["evidence_requirements"]["const"]
+
+
+def load_json_file(path):
+    try:
+        return json.loads(read_text(path))
+    except ValueError as exc:
+        die(2, "%s: invalid JSON: %s" % (path, exc))
+    except IOError as exc:
+        die(2, "%s: cannot read: %s" % (path, exc))
+
+
+def capability_verdict(record, capability):
+    """(satisfied, explanation) for one capability against one record."""
+    if record is None:
+        return False, "no capability record was supplied for this runtime"
+    if record["status"] != "measured":
+        return False, ("record %s is a %s, not a measurement"
+                       % (os.path.basename(record["_path"]), record["status"]))
+
+    entry = (record.get("capabilities") or {}).get(capability)
+    if entry is None:
+        return False, "absent from the record — unknown, and unknown fails closed"
+
+    state = entry.get("state")
+    required = record["_requirements"].get(capability, "enforcement")
+
+    if state == "enforced":
+        return True, "enforced"
+    if state == "observed":
+        if required == "observation":
+            return True, "observed"
+        return False, ("observed but not proven enforced, and %s requires enforcement "
+                       "— model compliance is not runtime enforcement" % capability)
+    if state == "unavailable":
+        return False, "measured as unavailable on this runtime"
+    if state == "unmeasured":
+        return False, "unmeasured: %s" % (entry.get("reason") or "no reason recorded")
+    if state == "documented":
+        return False, ("documented only (%s) — documentation is not an observation"
+                       % (entry.get("source") or "no source recorded"))
+    return False, "unrecognised state %r" % state
+
+
+def check_capabilities(roles, record, runtime, version, platform):
+    """Every role's required capabilities, against the record. Returns failures.
+
+    Runs before anything is written, so a refusal leaves the target untouched.
+    """
+    failures = []
+
+    if record is not None:
+        family = RUNTIME_FAMILY[runtime]
+        if record["runtime"].get("family") != family:
+            die(2, "%s: record is for runtime family %r, but rendering %r. A record proves "
+                   "nothing about another runtime."
+                   % (record["_path"], record["runtime"].get("family"), family))
+        if version is not None and record["runtime"].get("version") != version:
+            die(2, "%s: record measures version %r, but --runtime-version says %r. A "
+                   "measurement of one version does not carry to another."
+                   % (record["_path"], record["runtime"].get("version"), version))
+        if platform is not None and record["platform"].get("os") != platform:
+            die(2, "%s: record measures platform %r, but --platform says %r. Evidence from "
+                   "one platform does not certify another."
+                   % (record["_path"], record["platform"].get("os"), platform))
+
+    for role in roles:
+        required = role.get("required_capabilities") or []
+        for capability in required:
+            ok, why = capability_verdict(record, capability)
+            if not ok:
+                failures.append((role["id"], capability, why))
+    return failures
+
+
 def delivery_record(roles, cfg, runtime, revision):
     """What this render delivered, per role, for a result's `delivered_skills`.
 
@@ -621,6 +729,14 @@ def main(argv):
     ap.add_argument("--catalog", default="roles/catalog.json", help="root-relative catalog path")
     ap.add_argument("--config", default=None, help="routing file (default: config/routing/models.yaml)")
     ap.add_argument("--budget", type=int, default=None, help="per-file instruction budget in bytes")
+    ap.add_argument("--capabilities", default=None,
+                    help="runtime capability record for the target runtime. Required only "
+                         "when a role declares required_capabilities; without it such a "
+                         "role is refused rather than rendered.")
+    ap.add_argument("--runtime-version", default=None,
+                    help="version the record must have measured; mismatch is refused")
+    ap.add_argument("--platform", default=None, choices=["windows", "linux", "darwin"],
+                    help="platform the record must have measured; mismatch is refused")
     ap.add_argument("--apply", action="store_true")
     ap.add_argument("--check", action="store_true")
     ap.add_argument("--remove", action="store_true")
@@ -671,6 +787,24 @@ def main(argv):
     print("contract: %s (%s), %d role(s), revision %s" %
           (CONTRACT_VERSION, catalog.get("status", "?"), len(roles), revision))
     print("")
+
+    # --- capability gate, before a single byte is written ---------------------
+    capability_record = None
+    if args.capabilities:
+        capability_record = load_capability_record(args.capabilities, repo)
+        print("capabilities: %s (%s, %s %s, %s)" % (
+            args.capabilities, capability_record["status"],
+            capability_record["runtime"]["family"], capability_record["runtime"]["version"],
+            capability_record["platform"]["os"]))
+
+    cap_failures = check_capabilities(roles, capability_record, args.runtime,
+                                      args.runtime_version, args.platform)
+    if cap_failures:
+        for rid, capability, why in cap_failures:
+            sys.stderr.write("  refused: role %s requires %s — %s\n" % (rid, capability, why))
+        die(2, "%d role(s) require a capability this runtime cannot prove. Nothing was "
+               "written. A role runs only where its requirements are evidenced: supply a "
+               "measured record, or measure the capability." % len(set(f[0] for f in cap_failures)))
 
     rendered = {}
     oversize = []
