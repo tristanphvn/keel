@@ -14,6 +14,13 @@
 set -uo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+# shellcheck source=../lib/common.sh
+. "$ROOT/scripts/lib/common.sh"
+# shellcheck source=../lib/links.sh
+. "$ROOT/scripts/lib/links.sh"
+
+as_preflight sed awk grep find cmp diff cp mv rm mkdir mktemp date basename dirname || exit 1
+
 DEST="${AGENT_HOME:-$HOME/.agent}"
 BLOCK_SRC="$ROOT/config/claude/CLAUDE.md.block"
 TARGET="$DEST/CLAUDE.md"
@@ -91,7 +98,7 @@ if [ "$ACTION" = check ]; then
       n_ok=0; n_bad=0
       while IFS="$(printf '\t')" read -r link target; do
         [ -z "${link:-}" ] && continue
-        if [ -L "$link" ] && [ "$(readlink "$link")" = "$target" ] && [ -f "$link/SKILL.md" ]; then
+        if as_link_points_at "$link" "$target" && [ -f "$link/SKILL.md" ]; then
           n_ok=$((n_ok + 1))
         else
           n_bad=$((n_bad + 1)); echo "  FAIL  broken managed link: $link"
@@ -128,88 +135,56 @@ if [ "$ACTION" = link ] || [ "$ACTION" = unlink ]; then
   [ -e "$SKILLS_VIEW/.git" ] && gitdir="$SKILLS_VIEW/.git"
 
   if [ "$ACTION" = unlink ]; then
-    [ -f "$MANIFEST" ] || { echo "  no manifest at $MANIFEST; nothing was linked by this adapter."; exit 0; }
-    n=0
-    while IFS="$(printf '\t')" read -r link target; do
-      [ -z "${link:-}" ] && continue
-      if [ -L "$link" ] && [ "$(readlink "$link")" = "$target" ]; then
-        echo "  UNLINK $link"
-        [ "$APPLY" -eq 1 ] && rm -f "$link"
-        n=$((n + 1))
-      else
-        echo "  skip (not our symlink any more) $link"
-      fi
-    done < "$MANIFEST"
+    as_links_unlink "$MANIFEST" "$APPLY"
     if [ "$APPLY" -eq 1 ]; then
-      rm -f "$MANIFEST"
-      if [ -n "$gitdir" ] && [ -f "$gitdir/info/exclude" ]; then
+      # The exclude entries stay while any managed link is still in place.
+      if [ -z "${AS_LINKS_KEPT:-}" ] && [ -n "$gitdir" ] && [ -f "$gitdir/info/exclude" ]; then
         awk -v tag="$EXCLUDE_TAG" '
           index($0,tag) {inblk=1; next}
           inblk && /^\// {next}
-          {inblk=0; print}' "$gitdir/info/exclude" > "$gitdir/info/exclude.tmp$$" \
-          && mv -f "$gitdir/info/exclude.tmp$$" "$gitdir/info/exclude"
+          {inblk=0; print}' "$gitdir/info/exclude" > "$gitdir/info/exclude.tmp$$"           && mv -f "$gitdir/info/exclude.tmp$$" "$gitdir/info/exclude"
         echo "  cleaned our entries from $gitdir/info/exclude"
       fi
-      echo; echo "Removed $n link(s)."
+      echo; echo "Removed ${AS_LINKS_REMOVED:-0} link(s)."
     else
       echo; echo "Nothing written. Re-run with --apply to remove."
     fi
     exit 0
   fi
 
-  # link
-  mkdir -p "$SKILLS_VIEW" 2>/dev/null || true
-  collisions=0; planned=""
-  for d in "$SKILLS_SRC"/*/; do
-    [ -d "$d" ] || continue
-    name="$(basename "$d")"
-    link="$SKILLS_VIEW/$name"
-    tgt="${d%/}"
-    if [ -L "$link" ]; then
-      if [ "$(readlink "$link")" = "$tgt" ]; then
-        echo "  ok       $name (already linked)"
-        planned="$planned$link\t$tgt\n"
-        continue
-      fi
-      echo "  COLLISION $link is a symlink to $(readlink "$link") — not overwriting"
-      collisions=$((collisions + 1)); continue
-    fi
-    if [ -e "$link" ]; then
-      echo "  COLLISION $link already exists ($([ -d "$link" ] && echo directory || echo file)) — not overwriting"
-      collisions=$((collisions + 1)); continue
-    fi
-    echo "  LINK     $name -> $tgt"
-    planned="$planned$link\t$tgt\n"
-    [ "$APPLY" -eq 1 ] && { ln -s "$tgt" "$link" || { echo "  FAILED   $link"; collisions=$((collisions + 1)); }; }
-  done
+  # link — shared implementation, so the Claude and Codex adapters cannot drift
+  # apart on the parts that decide whether a user's directory survives.
+  if as_links_link "$SKILLS_SRC" "$SKILLS_VIEW" "$MANIFEST" "$APPLY"; then
+    collisions=0
+  else
+    collisions=1
+  fi
 
-  if [ "$APPLY" -eq 1 ]; then
-    printf '%b' "$planned" > "$MANIFEST"
-    echo "  manifest written: $MANIFEST"
-    if [ -n "$gitdir" ]; then
-      exc="$gitdir/info/exclude"
-      mkdir -p "$gitdir/info"
-      [ -f "$exc" ] || : > "$exc"
-      cp -p "$exc" "$exc.agent-skills.bak" 2>/dev/null || true
-      grep -qF "$EXCLUDE_TAG" "$exc" || printf '\n%s\n' "$EXCLUDE_TAG" >> "$exc"
-      while IFS="$(printf '\t')" read -r link target; do
-        [ -z "${link:-}" ] && continue
-        # No trailing slash: these are symlinks, and git matches a symlink as a
-        # file. A "dir/" pattern would not match them.
-        entry="/$(basename "$link")"
-        grep -qxF "$entry" "$exc" || printf '%s\n' "$entry" >> "$exc"
-      done < "$MANIFEST"
-      echo "  local exclude updated: $exc (tracked files untouched)"
-    fi
+  if [ "$APPLY" -eq 1 ] && [ -n "$gitdir" ] && [ -f "$MANIFEST" ]; then
+    exc="$gitdir/info/exclude"
+    mkdir -p "$gitdir/info"
+    [ -f "$exc" ] || : > "$exc"
+    cp -p "$exc" "$exc.agent-skills.bak" 2>/dev/null || true
+    grep -qF "$EXCLUDE_TAG" "$exc" || printf '
+%s
+' "$EXCLUDE_TAG" >> "$exc"
+    while IFS="$(printf '	')" read -r link target; do
+      [ -z "${link:-}" ] && continue
+      # No trailing slash: these are links, and git matches a link as a file.
+      # A "dir/" pattern would not match them.
+      entry="/$(basename "$link")"
+      grep -qxF "$entry" "$exc" || printf '%s
+' "$entry" >> "$exc"
+    done < "$MANIFEST"
+    echo "  local exclude updated: $exc (tracked files untouched)"
   fi
 
   echo
   if [ "$collisions" -gt 0 ]; then
-    echo "$collisions collision(s) — nothing was overwritten." >&2
+    echo "collision(s) — nothing was overwritten." >&2
     exit 1
   fi
-  [ "$APPLY" -eq 1 ] && echo "Linked. Restart Claude Code, then: bash scripts/adapters/claude.sh --check" \
-                     || echo "Nothing written. Re-run with --apply to create the links."
+  [ "$APPLY" -eq 1 ] && echo "Linked. Restart Claude Code, then: bash scripts/adapters/claude.sh --check"                      || echo "Nothing written. Re-run with --apply to create the links."
   exit 0
 fi
 
