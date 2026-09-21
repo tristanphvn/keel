@@ -13,4 +13,3 @@
 @{{AGENT_HOME}}/rules/40-correction-learning.md
 @{{AGENT_HOME}}/rules/50-design.md
 @{{AGENT_HOME}}/rules/60-adversarial-consensus.md
-@{{AGENT_HOME}}/rules/70-routing.md

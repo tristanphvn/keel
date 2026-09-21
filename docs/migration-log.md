@@ -230,3 +230,71 @@ Claude Code 2.1.220; `tool-isolation` is recorded as requested-but-not-proven, s
 child reporting a restricted tool list is not the runtime refusing a forbidden call;
 `fresh-context` and `workspace-isolation` are unmeasured. Every Codex row remains
 documented-not-measured — that CLI is still not installed.
+
+## 2026-09-21 — contract 0.3.0: permission floor, delivery provenance, routing rule removed
+
+Five open questions from the previous integration were resolved against repository
+evidence and implemented. The reasoning, including the rejected alternatives and the two
+material disagreements, is `docs/decisions/0001-contract-c1-c5.md`.
+
+**Version.** 0.2.0 → **0.3.0**, still draft. Not an automatic bump: `contracts/README.md`
+requires a new version for any schema change, and with `additionalProperties: false`
+everywhere, a 0.2.0 reader must reject a document carrying the new optional fields.
+Shipping them under the old number would have created exactly the silent incompatibility
+that rule prevents. Role profiles, the catalog and the examples changed only their
+version string; no role semantics were edited.
+
+**C1 — role→tool ownership.** The adapter was authoring behavioural policy: its config
+granted `review` `[Read, Grep, Glob, Bash]`, with no write tool at all, while the role's
+own ceiling includes `write` for its report. A tool limit that can turn a result from
+completed into blocked is not deployment detail. Roles gain optional
+`required_permissions` — a floor, in the permission classes the contract already defines,
+constrained to a subset of the ceiling. Tool *names* stay adapter-owned, because they are
+runtime-specific, and the routing config now maps permission class to tool names once per
+runtime rather than per role. Routing config version 2 → 3: a per-role `tools:` list is
+refused; an operator exception requires `tools_override` plus a `justification` and is
+stamped ADAPTER-DECLARED in the generated file. A role that declares no
+`required_permissions` renders with no limit, which is visibly attributed to the canonical
+model not having said what the role needs. Populating the field for the 14 roles is role
+semantics and remains Codex's to author.
+
+**C2 — delivered skill provenance.** `result.provenance` gains optional
+`delivered_skills: [{ref, sha256, method}]`. Four stages are now distinguishable and only
+three are representable: declared by the role, resolved to a canonical file, delivered
+into the context — and relied upon during execution, which nothing asserts. `reference` is
+deliberately the weaker claim of the two methods, because a child whose tool limit removed
+its Skill tool receives nothing at all under it, as measured. Each `--apply` writes
+`delivered-skills-<runtime>.json` alongside the rendered agents as the adapter's record.
+
+**C3 — `rules/70-routing.md` deleted.** `git log --diff-filter=A` shows it was added by
+`c3d0169`, adapter work on this side, never part of the contract. Its body duplicated
+role→skill selection — which `skill_refs` now own — and routed to `vault-rules`, a
+project-specific dependency the default installation must not have, and which the Codex
+handoff explicitly warned against. Because every file in `rules/` loads on Claude Code
+whether or not the canonical model declares it, leaving it in place meant one runtime
+silently receiving a rule the contract never acknowledged. Removed structurally: the file,
+its `config/AGENTS.md` import, and the eighth entry in `validate.sh`. `rules/` now equals
+the catalog's `rule_refs` exactly. No copy was kept anywhere — a copy would have recreated
+the second selection surface.
+
+**C4 — tool isolation is now proven, not assumed.** The definition was not weakened. A
+probe was built instead: a restricted child is told to invoke an excluded tool, and the
+transcript must show a real `tool_use` block answered with `is_error=true`, while an
+otherwise identical child *with* that tool succeeds in the same session. On Claude Code
+2.1.220 both arms behaved as required, so the capability moved from
+requested-but-unproven to **enforced**. The control arm matters: the refusal message also
+mentions a session-level restriction, and without a successful sibling that would be the
+simpler explanation. `tests/probes/tool-isolation.sh` reproduces it; it stays out of
+`tests/run.sh` because it needs credentials, network and billable usage. Codex remains
+unmeasured on every capability.
+
+**C5 — a completed example that cannot rot.** `contracts/examples/task-completed.json` and
+`result-completed.json`: two criteria, evidence entries referenced by the acceptance rows,
+one changed file inside the declared write scope, and delivery provenance. Both canonical
+pairs are now validated by `scripts/validate.sh` and by `tests/test_contracts.sh`, so
+acceptance semantics are exercised by shipped documents rather than only by fixtures the
+tests synthesise.
+
+Unedited on purpose: every rule body, every skill body, all role semantics, and Codex's
+own delivery records in `docs/orchestration-validation.md` and
+`docs/orchestration-handoff.md`, which describe 0.2.0 as it was shipped.

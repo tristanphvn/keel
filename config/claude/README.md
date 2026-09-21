@@ -21,10 +21,12 @@ Two consequences shape this adapter:
 
 1. **Rules need no imports here.** They already load from `rules/`. Adding
    `@{{AGENT_HOME}}/rules/...` to `CLAUDE.md` would load every rule twice.
-2. **Anything that lived only inside `AGENTS.md` is lost on Claude Code.** That is why the
-   routing table moved out of `config/AGENTS.md` into the shared `rules/70-routing.md`:
-   Claude Code picks it up from the rules directory, and `AGENTS.md` imports it for
-   everyone else. One source, no duplication.
+2. **Anything that lived only inside `AGENTS.md` is lost on Claude Code.** An earlier
+   pass moved a skill-routing table into `rules/70-routing.md` for that reason. It has
+   since been removed: role `skill_refs` are the canonical selection mechanism, and a
+   rule file that the canonical model never declared would load here regardless —
+   see `docs/decisions/0001-contract-c1-c5.md`. `rules/` now matches the catalog's
+   `rule_refs` exactly.
 
 `learned-rules.md` is deliberately left unreachable on Claude Code. It is a redirect shim
 whose entire content points at `rules/`, which Claude Code already loads — carrying it into

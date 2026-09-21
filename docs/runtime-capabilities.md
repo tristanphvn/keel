@@ -57,12 +57,13 @@ for.
    twice, so the managed block deliberately contains none, and `--check` fails
    if any appear.
 2. A user-scope `AGENTS.md` is inert here. Anything that lives only in that file
-   is invisible to Claude Code — which is why skill routing lives in
-   `rules/70-routing.md` rather than in the entrypoint.
+   is invisible to Claude Code. Conversely, everything in `rules/` loads whether
+   or not the canonical model mentions it — which is why `rules/` is kept equal
+   to the catalog's `rule_refs` and nothing else is allowed to live there.
 3. Restricting a sub-agent's tools silently removes its access to skills. A role
    that needs skills must not be given a `tools:` list that omits `Skill`.
 
-## Contract 0.2.0 integration — measured on Claude Code 2.1.220
+## Contract integration — measured on Claude Code 2.1.220
 
 Two arms of one controlled experiment, same canonical role (`review`), same tool
 restriction (`Read, Grep, Glob, Bash`), differing only in how its `skill_refs`
@@ -88,14 +89,38 @@ adapter-owned routing configuration therefore reaches the runtime.
 | --- | --- | --- |
 | `spawn` | yes | sub-agent created and its result collected |
 | `model-selection` | yes | transcript model differs from the parent's, as bound |
-| `tool-isolation` | requested, **not proven enforced** | the child reported exactly the configured tools; that is the child's report plus the absence of skills, not an observation of the runtime refusing a call |
-| `fresh-context` | not measured | no probe distinguishes a fresh context from an inherited one |
+| `tool-isolation` | **enforced** | a restricted child emitted a real `tool_use` for an excluded tool and the runtime answered `is_error=true`; an identical child *with* that tool succeeded in the same session |
+| `fresh-context` | **not measured** | no probe distinguishes a fresh context from an inherited one |
 | `workspace-isolation` | not measured | no separate writable workspace was requested |
 
-`tool-isolation` is deliberately not claimed as verified. Proving enforcement
-needs a child that *attempts* a forbidden call and is refused; what was observed
-is a child that reports a restricted tool list. Until that test exists, treat the
-capability as requested-not-enforced, which the contract counts as unavailable.
+### Tool isolation — how it was proven
+
+An earlier pass recorded this capability as *requested but not enforced*,
+because a child reporting a short tool list proves only that the child says so.
+The probe below replaced that report with an observation, and the verdict
+changed on the evidence.
+
+```
+restricted-probe (tools: Read)        TOOL_USE 'Bash' -> TOOL_RESULT is_error=True
+                                      "No such tool available: Bash"
+allowed-probe    (tools: Read, Bash)  TOOL_USE 'Bash' -> TOOL_RESULT is_error=False
+                                      "ISOLATION-PROBE"
+```
+
+Three things together make this enforcement rather than compliance: the child
+*attempted* the call (a `tool_use` block exists in the transcript), the runtime
+*refused* it (`is_error=true`), and an otherwise identical child with that tool
+in its list *succeeded in the same session*. The control arm is what rules out
+the alternative explanation — the first arm's error text also mentions a
+session-level restriction, and without the control that would be the simpler
+reading.
+
+Reproduce with `bash tests/probes/tool-isolation.sh`. It is not part of
+`tests/run.sh`: it needs credentials, network and billable usage. Its output
+carries the runtime version it was measured on.
+
+Not established by this probe: that any *other* capability is enforced.
+`fresh-context` and `workspace-isolation` have no probe yet.
 
 ## Windows link support — measured
 

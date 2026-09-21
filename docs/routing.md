@@ -15,7 +15,7 @@ python3 scripts/routing/render.py --runtime claude --target ~/.claude --remove -
 ## One role source
 
 `roles/catalog.json` and the `roles/<id>.json` profiles it lists are the only
-role source, against agent-work contract **0.2.0**. There is no second,
+role source, against agent-work contract **0.3.0**. There is no second,
 hand-maintained copy: the renderer authors no purpose, responsibility, boundary
 or instruction text. Everything it emits is either copied from a canonical
 artifact or comes from adapter-owned routing configuration.
@@ -26,7 +26,7 @@ repository-relative path and sha256. Regenerating replaces them wholesale.
 
 The renderer refuses, with exit 2 and no partial write, when:
 
-- the catalog or a profile declares a `contract_version` other than 0.2.0 — it
+- the catalog or a profile declares a `contract_version` other than 0.3.0 — it
   will not reinterpret a version it does not implement;
 - a reference is absolute, traverses upward, or resolves outside the pinned
   distribution root (symlinks are resolved before the check);
@@ -41,7 +41,7 @@ names, providers, prices or reasoning settings. `config/routing/models.yaml`
 binds them, per runtime:
 
 ```yaml
-version: 2
+version: 3
 policies:
   default:
     claude: {model: sonnet}
@@ -60,18 +60,40 @@ verified against session transcripts; the Codex identifiers are examples, since
 that CLI was not installed. Reasoning is bound per policy — Claude Code
 documents no per-agent reasoning key, so none is emitted there.
 
-Per-role runtime options live in the same file, keyed by role id:
+## Tool limits
+
+The contract names permission **classes**; this file maps them onto the tool
+names of each runtime:
 
 ```yaml
-roles:
-  review:
-    claude: {tools: [Read, Grep, Glob, Bash]}
-    codex:  {sandbox_mode: read-only}
+tool_map:
+  claude:
+    read:    [Read, Grep, Glob]
+    execute: [Bash]
 ```
 
-These change how the runtime is configured, never what the role is. A tool list
-or a sandbox mode grants nothing on its own — the contract's permission ceiling
-is an upper bound, and enforcement belongs to the runtime.
+A role's limit is then derived from its `required_permissions` through that map,
+so the same profile and map give the same limit everywhere. Three outcomes, each
+visible in the generated file:
+
+| `tool limit:` says | Meaning |
+| --- | --- |
+| `derived from the role's required_permissions` | contract-driven, deterministic |
+| `ADAPTER-DECLARED override — <justification>` | an operator decision, labelled as one |
+| `none (role declares no required_permissions; the agent inherits)` | the canonical model has not said what the role needs |
+
+Version 3 **refuses** a per-role `tools:` list. Choosing a tool limit per role is
+behavioural — removing an execute tool turns a role's result into `blocked` — so
+it belongs to the contract, not to adapter configuration. An operator exception
+is still possible through `tools_override`, but it requires a `justification` and
+is stamped ADAPTER-DECLARED in the output. A permission class a role requires but
+the map does not cover is a configuration error, not a silently dropped
+capability.
+
+Other per-role options, keyed by role id, change only how the runtime is
+configured: `codex.sandbox_mode`, and `skill_delivery` to override the automatic
+choice. None of them grants anything — the contract's permission ceiling is an
+upper bound, and enforcement belongs to the runtime.
 
 ## Skill delivery
 
@@ -93,6 +115,11 @@ of that experiment are recorded in the capability matrix.
 Preloaded copies are build outputs, not a second source: each is wrapped in
 `<!-- begin canonical skill: <path> sha256=... -->` markers, and the profile
 continues to point at the canonical file.
+
+Each `--apply` also writes `<target>/.agent-skills/delivered-skills-<runtime>.json`:
+what was delivered per role, by which mechanism, with digests. That is the
+adapter's record for a result's `delivered_skills` provenance — a delivery claim,
+never evidence that the instructions were relied upon.
 
 ## Instruction budget
 
