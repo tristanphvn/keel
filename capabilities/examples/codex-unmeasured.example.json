@@ -1,0 +1,36 @@
+{
+  "record_version": 1,
+  "kind": "runtime-capability-record",
+  "status": "example",
+  "runtime": {
+    "family": "codex",
+    "version": "0.0.0-example"
+  },
+  "platform": {
+    "os": "linux",
+    "detail": "placeholder — no Codex measurement has been taken on any platform"
+  },
+  "measured_at": "2026-09-21",
+  "capabilities": {
+    "spawn": {
+      "state": "unmeasured",
+      "reason": "The Codex CLI is not installed in the environment where the probes run. Its subagent configuration is documented, and documentation is not an observation."
+    },
+    "model-selection": {
+      "state": "unmeasured",
+      "reason": "No Codex session has been run, so no transcript records which model executed a role."
+    },
+    "tool-isolation": {
+      "state": "unmeasured",
+      "reason": "No Codex session has been run. sandbox_mode is a configuration key the adapter writes; writing it is not evidence that the runtime enforces it."
+    },
+    "fresh-context": {
+      "state": "unmeasured",
+      "reason": "No Codex session has been run. Context inheritance is described in the vendor documentation and has not been observed here."
+    },
+    "workspace-isolation": {
+      "state": "unmeasured",
+      "reason": "No Codex session has been run. No claim is made in either direction."
+    }
+  }
+}

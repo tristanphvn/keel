@@ -232,7 +232,29 @@ else
   skip "no python3 — contract documents unvalidated"
 fi
 
-echo "== 11. Routing configuration =="
+echo "== 11. Runtime capability records =="
+# Shape and semantics separately, as with the contract. Validating a record is
+# not measuring a runtime: nothing here re-runs a probe.
+if command -v python3 >/dev/null 2>&1; then
+  if python3 -c "import jsonschema" 2>/dev/null; then
+    if out=$(python3 scripts/capabilities/validate.py --schema 2>&1); then
+      pass "capability records satisfy the record schema"
+    else
+      bad "capability schema validation failed: $(printf '%s' "$out" | grep -m1 FAIL)"
+    fi
+  else
+    skip "no jsonschema module — capability record shape unvalidated"
+  fi
+  if out=$(python3 scripts/capabilities/validate.py --semantic 2>&1); then
+    pass "capability records satisfy the semantic checks"
+  else
+    bad "capability semantic validation failed: $(printf '%s' "$out" | grep -m1 FAIL)"
+  fi
+else
+  skip "no python3 — capability records unvalidated"
+fi
+
+echo "== 12. Routing configuration =="
 # The example is what a user copies, so it has to keep rendering the canonical
 # role set. Rendering is a dry run into a throwaway directory.
 if command -v python3 >/dev/null 2>&1; then

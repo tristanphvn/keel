@@ -1,0 +1,132 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Runtime capability record 1",
+  "description": "What one runtime, at one version, on one platform, was measured to be able to prove. Adapter-owned and separate from the agent-work contract: roles state what they require, records state what a runtime can prove, and the renderer matches the two.",
+  "type": "object",
+  "properties": {
+    "record_version": {
+      "const": 1,
+      "description": "Schema version of this record format. Exact match; a reader does not reinterpret another version."
+    },
+    "kind": { "const": "runtime-capability-record" },
+    "status": {
+      "enum": ["measured", "example"],
+      "description": "`measured` records are evidence. `example` records are fixtures and must never satisfy a capability requirement, whatever they claim."
+    },
+    "runtime": {
+      "type": "object",
+      "properties": {
+        "family": {
+          "enum": ["claude-code", "codex"],
+          "description": "Runtime family. A record proves nothing about another family."
+        },
+        "version": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Exact runtime version as the runtime itself reports it. No ranges: no evidence exists for what a range would claim."
+        }
+      },
+      "required": ["family", "version"],
+      "additionalProperties": false
+    },
+    "platform": {
+      "type": "object",
+      "properties": {
+        "os": {
+          "enum": ["windows", "linux", "darwin"],
+          "description": "Measurement platform. Evidence from one OS never certifies another."
+        },
+        "detail": {
+          "type": "string",
+          "description": "Free text for a human reader, e.g. a uname string. Must not carry a user name, home directory or host name."
+        }
+      },
+      "required": ["os"],
+      "additionalProperties": false
+    },
+    "measured_at": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$",
+      "description": "Date of the measurement run. Provenance only: staleness is decided by version, platform and probe digest, never by age."
+    },
+    "adapter_revision": {
+      "type": "string",
+      "description": "Distribution revision the probes were run from."
+    },
+    "capabilities": {
+      "type": "object",
+      "description": "Keyed by the capability names the agent-work contract defines. A capability absent from this object is unknown, and unknown fails closed.",
+      "propertyNames": {
+        "enum": ["spawn", "model-selection", "tool-isolation", "workspace-isolation", "fresh-context"]
+      },
+      "additionalProperties": { "$ref": "#/$defs/capability" }
+    }
+  },
+  "required": ["record_version", "kind", "status", "runtime", "platform", "capabilities"],
+  "additionalProperties": false,
+  "$defs": {
+    "evidence_requirements": {
+      "description": "The evidence level each capability demands before a role requiring it may render. Read by the validator and the renderer so there is one definition, not two. `enforced` satisfies both levels; `observed` satisfies only `observation`.",
+      "type": "object",
+      "const": {
+        "spawn": "observation",
+        "model-selection": "observation",
+        "fresh-context": "observation",
+        "tool-isolation": "enforcement",
+        "workspace-isolation": "enforcement"
+      }
+    },
+    "capability": {
+      "type": "object",
+      "properties": {
+        "state": {
+          "enum": ["enforced", "observed", "unavailable", "unmeasured", "documented"],
+          "description": "enforced: the runtime demonstrably prevents the violation. observed: behaviour seen, prevention untested. unavailable: exercised and absent. unmeasured: no probe run. documented: vendor documentation only."
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Why a capability is unmeasured. Required for that state, so unknown never collapses into a bare false."
+        },
+        "source": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Where a documented-only claim comes from. Required for `documented`."
+        },
+        "evidence": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/evidence" }
+        }
+      },
+      "required": ["state"],
+      "additionalProperties": false
+    },
+    "evidence": {
+      "type": "object",
+      "properties": {
+        "probe": {
+          "type": "string",
+          "pattern": "^(?!/)(?![A-Za-z]:)(?!.*\\\\)(?!.*(?:^|/)\\.\\.(?:/|$))[^\\u0000-\\u001f]+$",
+          "description": "Repository-relative path to the probe that produced this observation."
+        },
+        "probe_sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$",
+          "description": "Digest of the probe at measurement time. A probe that has since changed invalidates this evidence."
+        },
+        "kind": {
+          "enum": ["observation", "enforcement"],
+          "description": "`enforcement` means the runtime was seen refusing the violation, not merely the agent complying."
+        },
+        "observation": {
+          "type": "string",
+          "minLength": 1,
+          "description": "What was actually seen, in terms that can be checked against the probe's output."
+        }
+      },
+      "required": ["probe", "probe_sha256", "kind", "observation"],
+      "additionalProperties": false
+    }
+  }
+}

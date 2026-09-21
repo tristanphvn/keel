@@ -1,0 +1,72 @@
+{
+  "record_version": 1,
+  "kind": "runtime-capability-record",
+  "status": "measured",
+  "runtime": {
+    "family": "claude-code",
+    "version": "2.1.220"
+  },
+  "platform": {
+    "os": "windows",
+    "detail": "MINGW64_NT-10.0-26200"
+  },
+  "measured_at": "2026-09-21",
+  "adapter_revision": "e566f645e6114d514cd5e0497ea91f75f6fa4d61",
+  "capabilities": {
+    "spawn": {
+      "state": "observed",
+      "evidence": [
+        {
+          "probe": "tests/probes/tool-isolation.sh",
+          "probe_sha256": "8e82d45addb2beeedee3473796e29bf94c55f0952e1f96aea4047960b0e4c9c9",
+          "kind": "observation",
+          "observation": "Both probe arms spawned a sub-agent from a parent session and the parent collected each child's reply; the runtime wrote a separate transcript per child under projects/**/subagents/."
+        }
+      ]
+    },
+    "model-selection": {
+      "state": "observed",
+      "evidence": [
+        {
+          "probe": "tests/probes/tool-isolation.sh",
+          "probe_sha256": "8e82d45addb2beeedee3473796e29bf94c55f0952e1f96aea4047960b0e4c9c9",
+          "kind": "observation",
+          "observation": "A child whose agent definition set model: haiku ran as claude-haiku-4-5-20251001 while its parent ran claude-sonnet-5, read from the model field of the session transcripts rather than from the agent's prose."
+        }
+      ]
+    },
+    "tool-isolation": {
+      "state": "enforced",
+      "evidence": [
+        {
+          "probe": "tests/probes/tool-isolation.sh",
+          "probe_sha256": "8e82d45addb2beeedee3473796e29bf94c55f0952e1f96aea4047960b0e4c9c9",
+          "kind": "enforcement",
+          "observation": "A child restricted to tools: Read emitted a real tool_use for Bash and the runtime answered tool_result is_error=true, 'No such tool available: Bash'. An otherwise identical child with tools: Read, Bash emitted the same call in the same session and received is_error=false with the command output, so the refusal is attributable to the tool list and not to Bash being unavailable."
+        }
+      ]
+    },
+    "fresh-context": {
+      "state": "observed",
+      "evidence": [
+        {
+          "probe": "tests/probes/fresh-context.sh",
+          "probe_sha256": "f301b150e2d3cce6449698eab96bac3de38eeee1d3605fd64bbb26af0f1308eb",
+          "kind": "observation",
+          "observation": "A canary stated only in the parent conversation never appeared anywhere in the child's transcript, while a second canary passed through the child's own prompt was reported back. The control rules out a child that simply declines to report canaries it holds."
+        }
+      ]
+    },
+    "workspace-isolation": {
+      "state": "unavailable",
+      "evidence": [
+        {
+          "probe": "tests/probes/workspace-isolation.sh",
+          "probe_sha256": "edf4858e350404aef48e07933bd2727971980504689591d8dee6c29cf5f18c58",
+          "kind": "observation",
+          "observation": "A child read a canary file located outside the session's working directory: tool_use Read on the out-of-scope absolute path returned the file content with no error, while the in-workspace control read also succeeded in the same session. The runtime imposes no workspace boundary on sub-agent file access here."
+        }
+      ]
+    }
+  }
+}
