@@ -1,0 +1,35 @@
+{
+  "contract_version": "0.2.0",
+  "kind": "result",
+  "task_id": "check-input-validation",
+  "attempt": 1,
+  "status": "blocked",
+  "summary": "Illustrative envelope only: fixture execution is not available.",
+  "mechanism": "direct",
+  "provenance": {
+    "runtime": "unverified",
+    "runtime_version": "unverified",
+    "adapter": "none",
+    "profile_revision": "fixture-v1",
+    "model": "unverified",
+    "workspace_revision": "fixture-v1"
+  },
+  "acceptance": [
+    {
+      "criterion_id": "reject-empty",
+      "status": "blocked",
+      "evidence_ids": []
+    }
+  ],
+  "evidence": [],
+  "changed_files": [],
+  "unresolved": [
+    {
+      "description": "The illustrative fixture is not shipped or executed.",
+      "blocking": true,
+      "next_action": "Provide a real local fixture and execute it before claiming pass."
+    }
+  ],
+  "handoff_to": "orchestrator",
+  "dispatch_id": "example-dispatch-one"
+}

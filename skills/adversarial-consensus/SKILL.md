@@ -123,24 +123,24 @@ Independence depends on the agent type:
 
 | Type | Context | Independent? |
 |---|---|---|
-| `general-purpose`, `Explore`, `cavecrew-investigator`, `cavecrew-reviewer` | cold start | **Yes** — re-derives from evidence |
-| `fork` | inherits the full parent conversation | **No** — anchored by construction |
+| Verified fresh-context execution | explicit raw evidence packet, no inherited reasoning | Eligible for independent analysis; still check shared assumptions |
+| Inherited-context execution, including a full-history fork | parent conversation and conclusions | **No** — anchored by construction |
 
-A `fork` inherits every assumption already made in this conversation, including the wrong one under dispute. It is useful for parallel work, useless as a Challenger. For genuine falsification, use a cold-start agent and give it the evidence pointers (paths, commands, ticket) — not the conclusion to critique.
+A full-history fork inherits assumptions already made in the conversation, including the wrong one under dispute. It can help with parallel work but cannot satisfy an independent challenge requirement. Verify the runtime's actual context behavior rather than inferring it from a named agent type. For independent falsification, use a genuinely fresh execution and give it raw evidence pointers (paths, commands, ticket), not the prior conclusion. If fresh context is unavailable, disclose the limitation; do not claim independent review.
 
-The heavyweight option is `/code-review ultra` (multi-agent cloud review of the branch or a PR). It is **user-triggered and billed** — it cannot be launched on the user's behalf; suggest it, never invoke it.
+Use an external review service only when the current runtime actually provides it and the user has authorized its use and any associated cost. Do not assume a vendor-specific review command exists.
 
 ## Internal passes
 
 When subagents are unavailable or not warranted, run clearly separated passes in one session:
 
 ```text
-Independent Pass A — Defender
-Independent Pass B — Challenger
+Sequential Pass A — Defender (not independent)
+Sequential Pass B — Challenger (not independent)
 Adjudication Pass
 ```
 
-Do NOT describe internal passes as if autonomous agents were created. Never claim agents ran when they did not — same rule as `TEST-001` for tests.
+Do NOT describe internal passes as autonomous agents or independent evidence. They can expose additional issues but do not satisfy a task requiring independent review. Never claim agents ran when they did not — same rule as `TEST-001` for tests.
 
 ---
 

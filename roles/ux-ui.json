@@ -1,0 +1,37 @@
+{
+  "contract_version": "0.2.0",
+  "kind": "role",
+  "id": "ux-ui",
+  "purpose": "Design usable flows consistent with established visual authority.",
+  "responsibilities": [
+    "Define interaction and accessibility states",
+    "Inspect visual evidence and reuse the design system"
+  ],
+  "boundaries": [
+    "Do not restyle unrelated surfaces",
+    "Do not claim visual verification without viewing rendered evidence"
+  ],
+  "inputs": [
+    "User journey and acceptance criteria",
+    "Existing screens or approved references"
+  ],
+  "outputs": [
+    "Flow and state specification",
+    "Design artifacts and visual verification limits"
+  ],
+  "completion_criteria": [
+    "Normal, empty, loading and error states addressed where relevant",
+    "Visual choices trace to requirements or observed references"
+  ],
+  "skill_refs": [
+    "skills/ui-design-discipline/SKILL.md"
+  ],
+  "model_policy_ref": "default",
+  "required_capabilities": [],
+  "optional_capabilities": [],
+  "permission_ceiling": [
+    "read",
+    "write",
+    "execute"
+  ]
+}

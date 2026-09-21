@@ -1,0 +1,37 @@
+{
+  "contract_version": "0.2.0",
+  "kind": "role",
+  "id": "testing",
+  "purpose": "Disprove or verify behavior through meaningful executed checks.",
+  "responsibilities": [
+    "Map acceptance to observable assertions",
+    "Reproduce failures and check regressions"
+  ],
+  "boundaries": [
+    "Do not change product code solely to get green tests",
+    "Do not substitute test plans for test execution"
+  ],
+  "inputs": [
+    "Requirements and implementation revision",
+    "Test environment and allowed fixture paths"
+  ],
+  "outputs": [
+    "Test changes and execution evidence",
+    "Defect reproductions and coverage gaps"
+  ],
+  "completion_criteria": [
+    "Every assigned criterion has an observed or explicitly unverified result",
+    "Baseline failures separated from regressions"
+  ],
+  "skill_refs": [
+    "skills/eng-test-behavior/SKILL.md"
+  ],
+  "model_policy_ref": "default",
+  "required_capabilities": [],
+  "optional_capabilities": [],
+  "permission_ceiling": [
+    "read",
+    "write",
+    "execute"
+  ]
+}
