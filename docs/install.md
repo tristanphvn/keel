@@ -120,6 +120,35 @@ Renders the 14 canonical role profiles into agent definitions and binds the
 contract's logical model policies to concrete models. See [routing.md](routing.md).
 Installation does not require it.
 
+## Runtime capability records
+
+```bash
+python3 scripts/capabilities/validate.py --schema
+python3 scripts/capabilities/validate.py --semantic
+python3 scripts/routing/render.py --runtime claude --target ~/.claude   --capabilities capabilities/records/claude-code-2.1.220-windows.json   --runtime-version 2.1.220 --platform windows --apply
+```
+
+`capabilities/records/` says what a runtime was *measured* to be able to prove.
+When a role declares `required_capabilities`, the renderer matches them against
+that record and refuses — before writing anything — if the evidence does not
+reach the level the capability demands. Unmeasured, documented-only, a record for
+another version or platform, or no record at all: all refuse.
+
+The canonical roles declare no required capabilities today, so the default render
+needs no record and behaves exactly as before.
+
+Measuring a runtime is a separate, deliberate act:
+
+```bash
+bash tests/probes/tool-isolation.sh
+bash tests/probes/fresh-context.sh
+bash tests/probes/workspace-isolation.sh
+```
+
+These are not in `tests/run.sh` — they need credentials, network and billable
+usage. Their output is read by a human, who writes the record; probe transcripts
+are never committed.
+
 ## Validating contract documents
 
 ```bash

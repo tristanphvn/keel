@@ -298,3 +298,61 @@ tests synthesise.
 Unedited on purpose: every rule body, every skill body, all role semantics, and Codex's
 own delivery records in `docs/orchestration-validation.md` and
 `docs/orchestration-handoff.md`, which describe 0.2.0 as it was shipped.
+
+## 2026-09-21 — M1: runtime capability records and a fail-closed renderer gate
+
+Capability claims stopped living only in prose. `capabilities/` now holds a record
+schema, one measured record per runtime/version/platform, and clearly labelled fixtures;
+the renderer reads them and refuses to render a role whose required capabilities are not
+evidenced. Design and rejected alternatives: `docs/decisions/0002-runtime-capability-records.md`.
+
+The contract is untouched. Roles state what they require, records state what a runtime can
+prove, and the renderer matches the two — three artifacts, three owners, no new place to
+declare either side. `required_permissions` was not populated and no Codex tool identifier
+was guessed; both remain owner decisions.
+
+**Two new probes, run before the design was written**, because a representation that
+cannot hold the evidence we have is the wrong representation.
+
+`fresh-context`: two canaries through two channels in one session. The session canary is
+stated only in the parent's conversation; the prompt canary is handed to the child. The
+child reported the prompt canary and the session canary appears nowhere in its transcript.
+The control is what makes the absence mean something. Recorded as `observed` rather than
+`enforced` — the property is what the child received, read from the runtime's transcript,
+and there is no prevention step to catch.
+
+`workspace-isolation`: **unavailable**. The child emitted a real tool call for a canary
+file outside the session directory and received its contents, while the in-workspace
+control read succeeded in the same session. Claude Code imposes no workspace boundary on
+sub-agent file access here. Two earlier runs returned INCONCLUSIVE instead of a verdict —
+once because a permission prompt denied both reads in non-interactive mode, once because
+MSYS-form paths did not resolve for a native process. A permission prompt is not a sandbox
+and a missing file is not a boundary; the probe now distinguishes all three.
+
+**States, and why unknown keeps its reason.** `enforced`, `observed`, `unavailable`,
+`unmeasured`, `documented`. The last two fail closed exactly like the third, but only
+`unavailable` is a finding; collapsing unknown into false would erase why it is unknown,
+which is the failure this milestone exists to prevent. Each capability declares the
+evidence level it demands, once, in the schema: `tool-isolation` and `workspace-isolation`
+require enforcement, the rest observation. `enforced` satisfies both; `observed` satisfies
+only observation-level, so an observed-but-unenforced tool isolation can never satisfy a
+role that requires it.
+
+**Staleness is falsifiable, not time-based.** A record proves nothing about another
+version, another platform or another runtime family, and each evidence entry carries the
+sha256 of the probe that produced it — a probe that has since changed invalidates its own
+claim. No expiry date: it would be arbitrary or would silently discard good evidence.
+
+**The gate runs before the first byte.** It sits in the same pre-write phase as the
+instruction-budget check, so a refusal leaves the target untouched; the tests assert zero
+files written on every refusal path. A role requiring nothing renders with no record at
+all, which is the state of all 14 canonical roles, so the default path is unchanged.
+
+**Codex stays fail-closed.** The shipped Codex record is an `example` with every capability
+`unmeasured` and a reason, and the validator forbids an example from claiming a measured
+state at all. A role requiring any capability therefore cannot render for Codex. That is
+the correct outcome; the adapter's write tests say what the adapter writes, never what a
+runtime does.
+
+Records are committed as curated evidence. Probe output is not: transcripts carry absolute
+paths and, in a credentialed run, potentially more. The probe is the reproducer.

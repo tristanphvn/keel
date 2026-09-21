@@ -1,5 +1,11 @@
 # Runtime capability matrix
 
+> **The machine-readable form is authoritative for tooling.**
+> `capabilities/records/<family>-<version>-<os>.json` carries the same facts in a
+> form the renderer consumes, and the renderer refuses to render a role whose
+> required capabilities are not evidenced there. This page is the human
+> explanation of those records — see `docs/decisions/0002-runtime-capability-records.md`.
+
 What each supported runtime actually does with this configuration, and how that
 was established. Every row is either **measured** on a named version, or
 **documented** — read from the vendor's documentation and not yet observed here.
@@ -90,8 +96,8 @@ adapter-owned routing configuration therefore reaches the runtime.
 | `spawn` | yes | sub-agent created and its result collected |
 | `model-selection` | yes | transcript model differs from the parent's, as bound |
 | `tool-isolation` | **enforced** | a restricted child emitted a real `tool_use` for an excluded tool and the runtime answered `is_error=true`; an identical child *with* that tool succeeded in the same session |
-| `fresh-context` | **not measured** | no probe distinguishes a fresh context from an inherited one |
-| `workspace-isolation` | not measured | no separate writable workspace was requested |
+| `fresh-context` | **observed** | a canary stated only in the parent conversation never appeared in the child's transcript, while a canary passed through the child's own prompt was reported back |
+| `workspace-isolation` | **unavailable** | the child read a canary file outside the session directory; the in-workspace control read succeeded in the same session |
 
 ### Tool isolation — how it was proven
 
@@ -120,7 +126,37 @@ Reproduce with `bash tests/probes/tool-isolation.sh`. It is not part of
 carries the runtime version it was measured on.
 
 Not established by this probe: that any *other* capability is enforced.
-`fresh-context` and `workspace-isolation` have no probe yet.
+
+### Fresh context — how it was measured
+
+`tests/probes/fresh-context.sh` runs two canaries through two channels in one
+session. The SESSION canary is stated only in the parent's conversation — never
+on disk, never in the agent definition, never in the child's prompt, never in
+the environment or argv. The PROMPT canary is passed to the child directly. The
+child is asked to report every canary it can see.
+
+Observed: the child reported the PROMPT canary and the SESSION canary appears
+nowhere in its transcript. The control is what makes the absence meaningful — a
+child that reports the canary it has is a child that would have reported the
+other one too. Both canaries are random per run, so neither can be guessed.
+
+Recorded as `observed`, not `enforced`: the capability is about what the child
+*received*, read from the runtime's own transcript. There is no prevention step
+to catch it in the act.
+
+### Workspace isolation — measured **unavailable**
+
+`tests/probes/workspace-isolation.sh` writes a canary outside the session's
+working directory and instructs the child to read it for real. The child emitted
+a `tool_use` for the out-of-scope absolute path and received the file content,
+with no error; the in-workspace control read succeeded in the same session. So
+the runtime imposes no workspace boundary on sub-agent file access here.
+
+Two earlier runs of this probe returned INCONCLUSIVE rather than a verdict, and
+both were right to: first the permission prompt denied *both* reads in
+non-interactive mode, then MSYS-form paths did not resolve for the native
+process. A permission prompt is not a sandbox, and a missing file is not a
+boundary. The probe distinguishes all three.
 
 ## Windows link support — measured
 
@@ -194,6 +230,9 @@ running instance.
 | Codex `project_doc_max_bytes` = 32 KiB | configured, **not measured** | vendor documentation; the CLI is not installed here |
 | Renderer `--budget` (32 KiB default for Codex) | configured | mirrors the value above so a rendered file cannot silently exceed it |
 | Claude Code per-agent instruction limit | **unknown** | no documented value, and none probed. The renderer therefore enforces no limit there — absence of a documented limit is not evidence that none exists |
+
+This is also why no capability record carries an instruction-limit entry: there
+is nothing measured to record. The renderer's 32 KiB budget is configuration.
 
 Measuring an effective limit means growing an instruction file until the runtime
 demonstrably drops content, and observing where. That test has not been run on
