@@ -264,6 +264,48 @@ Neither shipped `tool_map` (`models.example.yaml`, and the local `models.yaml`)
 declares a tool name under two classes, so no currently rendered output changes.
 The check closes the path, it does not alter today's results.
 
+---
+
+## Follow-up: the installer had the same ownership defect
+
+Found while reviewing adjacent execution paths against the invariant the
+renderer fix established. Reproduced at `192aa67` before any change.
+
+`scripts/install.sh` writes `path<TAB>sha256` for every file it installs, and
+its own header says a path "whose hash no longer matches has been edited by the
+user since". `scripts/uninstall.sh` honours that — it refuses to delete an edited
+file and reports `KEPT (modified since install)`, requiring `--force`. The
+installer did not. It compared the destination against the rendered source and
+overwrote on any difference, so "the user edited this file" and "the repo moved
+on" were indistinguishable.
+
+The hash needed to tell them apart was written on every run and then loaded with
+`cut -f1` (line 103), which discarded the digest column.
+
+| Step | Before |
+| --- | --- |
+| `install.sh --apply` into a fresh `$AGENT_HOME` | manifest records `98133280…` for `skills/review-code/SKILL.md` |
+| append a local customization | `d77f5dee…` on disk |
+| `install.sh --apply` again | exit **0**, `OVERWRITE`, file back to `98133280…` — customization gone |
+
+A preflight now compares every destination against its recorded hash before the
+first write. A file that would change and whose digest no longer matches is
+reported as `CONFLICT` and the run refuses — before the backup is taken, so a
+refused run leaves no new backup directory and no manifest rewrite either.
+
+Two deliberate limits, both stated rather than quietly assumed:
+
+- **Conflict protection is not transactional atomicity.** The preflight stops a
+  bad run from starting. It does not make the write loop crash-safe; a failure
+  part-way through still leaves a partially updated tree, and the verified backup
+  is what covers that. The same distinction applies to the renderer.
+- **A destination absent from the manifest is reported, not blocked.** It is now
+  labelled `OVERWRITE (not recorded by this installer)` instead of a bare
+  `OVERWRITE`. Blocking it would break a first install onto a directory that
+  already holds the user's own files, and the verified backup already covers the
+  case. Whether to promote it to a refusal is a separate decision, like
+  `--remove`'s exit semantics.
+
 ### Canonical positions carried forward
 
 Contract 0.3.0 stays draft. A probe of separate writable workspaces and
