@@ -222,6 +222,17 @@ skills:
     version: 1
 
 # Planned — architecture only, not yet authored. Do not create until requested.
+  - id: core-english-work-coach
+    legacy_name: english-work-coach
+    domain: core
+    status: active
+    auto_trigger: false
+    purpose: Opt-in English lessons and work-prompt coaching with modality-aware assessment and separate learner progress.
+    depends_on: []
+    rules: [REVIEW-001, REVIEW-003, REVIEW-004]
+    version: 1
+    notes: Explicit activation or an established coaching session only; runtime copies derive from skills/english-work-coach.
+
 planned:
   - id: core-source-grounding
     domain: core
