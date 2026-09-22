@@ -428,6 +428,41 @@ def check_authorization(role, granted, floor, ceiling, tool_map, runtime):
     return granted_set
 
 
+def check_tool_selection(role, tools, granted_set, tool_map, runtime, origin):
+    """Validate a selected tool list against the authorization. Fatal on violation.
+
+    One gate, used by both executable paths. A tool NAME may appear under several
+    permission classes, so selecting it for one authorized class selects every
+    class it declares. The derived path used to skip this check entirely: it
+    walked the authorized classes and collected their tool names without ever
+    asking what else those names are mapped to, so a name shared between an
+    authorized and an unauthorized class was emitted as though it carried only
+    the authorized one — outside the authorization, and with it the ceiling.
+
+    Same limit as everywhere else this map is consulted: it constrains declared
+    tool names before anything is written. It does not confine what a tool does
+    once it runs.
+    """
+    unmapped = [t for t in tools if not classes_for_tools(tool_map, [t])]
+    if unmapped:
+        die(2, "role %s: %s names %s, which the %s tool_map does not describe, so "
+               "which permission class(es) they carry is unknown. An unmapped tool "
+               "cannot be checked against the authorization."
+               % (role["id"], origin, ", ".join(sorted(unmapped)), runtime))
+
+    violations = []
+    for tool in tools:
+        outside = sorted(classes_for_tools(tool_map, [tool]) - granted_set)
+        if outside:
+            violations.append("%s carries %s" % (tool, ", ".join(outside)))
+    if violations:
+        die(2, "role %s: %s reaches outside its authorized permissions [%s]: %s. The "
+               "authorization and the ceiling bound a derived tool list and an override "
+               "alike, justified or not: a tool name mapped to an unauthorized class "
+               "carries that class whichever path selected it."
+               % (role["id"], origin, ",".join(sorted(granted_set)), "; ".join(violations)))
+
+
 def effective_tools(role, cfg, rid, runtime):
     """(tools, origin, note) for a role.
 
@@ -486,24 +521,8 @@ def effective_tools(role, cfg, rid, runtime):
 
         # Every overridden tool must be known to the map, and must not carry a
         # permission class outside the authorization (hence outside the ceiling).
-        unmapped = [t for t in override if not classes_for_tools(tool_map, [t])]
-        if unmapped:
-            die(2, "role %s: tools_override names %s, which the %s tool_map does not "
-                   "describe, so which permission class(es) they carry is unknown. An "
-                   "unmapped tool cannot be checked against the authorization."
-                   % (role["id"], ", ".join(sorted(unmapped)), runtime))
-
-        violations = []
-        for tool in override:
-            carried = classes_for_tools(tool_map, [tool])
-            outside = sorted(carried - granted_set)
-            if outside:
-                violations.append("%s carries %s" % (tool, ", ".join(outside)))
-        if violations:
-            die(2, "role %s: tools_override reaches outside its authorized permissions "
-                   "[%s]: %s. The authorization and the ceiling bound an override exactly "
-                   "as they bound a derived list, justified or not."
-                   % (role["id"], ",".join(sorted(granted_set)), "; ".join(violations)))
+        check_tool_selection(role, override, granted_set, tool_map, runtime,
+                             "tools_override")
 
         covered = classes_for_tools(tool_map, override)
         unmet = sorted(floor - covered)
@@ -532,6 +551,12 @@ def effective_tools(role, cfg, rid, runtime):
         for name in tool_map[cls]:
             if name not in tools:
                 tools.append(name)
+
+    # Derivation selects names, not classes. A name reached through an authorized
+    # class can also be mapped to an unauthorized one, so the selected list goes
+    # through the same gate an override does.
+    check_tool_selection(role, tools, granted_set, tool_map, runtime,
+                         "the tool list derived from its authorized permissions")
     return tools, "authorized", ",".join(sorted(granted_set))
 
 
@@ -947,6 +972,24 @@ def write_manifest(target, entries):
                "".join("%s\t%s\n" % (p, h) for p, h in sorted(entries.items())))
 
 
+def ownership_conflict(path, owned):
+    """Why this file may not be replaced or removed, or None if it may be.
+
+    One ownership test for every file a render touches. A path this renderer
+    never recorded belongs to someone else. A recorded path whose bytes no longer
+    match the digest it was written with carries an edit made since. Neither is a
+    build output this run is free to discard, and the difference between them is
+    worth reporting, so the caller gets the reason rather than a bare boolean.
+    """
+    if not os.path.exists(path):
+        return None
+    if path not in owned:
+        return "not written by this renderer"
+    if sha256_file(path) != owned[path]:
+        return "modified since it was rendered"
+    return None
+
+
 # --- main ---------------------------------------------------------------------
 
 def main(argv):
@@ -1077,38 +1120,77 @@ def main(argv):
         return 0 if problems == 0 else 1
 
     # --- render ---------------------------------------------------------------
-    # A role that changes side must not leave its old file behind: an executable
-    # that becomes a template would otherwise stay discoverable and dispatchable.
-    # The old file is removed only when this renderer owns it AND its digest still
-    # matches what was written. Anything else is someone's edit or someone else's
-    # file: it is preserved, reported, and the run refuses rather than claiming a
-    # deactivation that did not happen.
-    stale_conflicts = []
+    # Everything this run would generate, named before anything is touched. The
+    # auxiliary files are build outputs exactly like an agent file is, so they
+    # are ownership-checked the same way: knowing a path is not a licence to
+    # overwrite whatever is sitting at it.
+    aux_outputs = []  # (path, content, tag, what it is)
+    if any(not executable[r["id"]] for r in roles):
+        aux_outputs.append((os.path.join(template_dir(target, args.runtime), "README.md"),
+                            TEMPLATE_README, "readme  ", "templates README"))
+    aux_outputs.append((os.path.join(target, ".agent-skills",
+                                     "delivered-skills-%s.json" % args.runtime),
+                        delivery_record(roles, cfg, args.runtime, revision),
+                        "record  ", "delivery record"))
+
+    # --- preflight, before a single byte is written --------------------------
+    # Two questions per role, both answered before any mutation:
+    #
+    #   destination      may this run replace what is already at the path it is
+    #                    about to write?
+    #   migration source may it remove the copy at the other location, so a role
+    #                    that changed side leaves nothing discoverable behind?
+    #
+    # Only the second was asked. The write loop then overwrote a destination it
+    # owned without ever comparing the file against the digest it had recorded,
+    # so an edit made to a rendered agent since the last run was silently lost.
+    #
+    # A conflict anywhere refuses the whole run. Writing the roles that happen to
+    # be clean would leave the target half-migrated, with a manifest and a
+    # delivery record describing a delivery that did not take place.
+    conflicts = []
     migrations = []
     for role in roles:
         rid = role["id"]
-        _path, other = output_paths(target, args.runtime, rid, ext, executable[rid])
-        if not os.path.exists(other):
-            continue
-        direction = "deactivate" if not executable[rid] else "promote"
-        if other not in owned:
-            stale_conflicts.append((rid, other, "not written by this renderer"))
-        elif sha256_file(other) != owned[other]:
-            stale_conflicts.append((rid, other, "modified since it was rendered"))
-        else:
-            migrations.append((rid, other, direction))
+        path, other = output_paths(target, args.runtime, rid, ext, executable[rid])
 
-    if stale_conflicts:
-        for rid, path, why in stale_conflicts:
+        why = ownership_conflict(path, owned)
+        if why:
+            conflicts.append(("destination", rid, path, why))
+
+        if os.path.exists(other):
+            why = ownership_conflict(other, owned)
+            if why:
+                conflicts.append(("stale", rid, other, why))
+            else:
+                migrations.append((rid, other,
+                                   "deactivate" if not executable[rid] else "promote"))
+
+    for path, _content, _tag, what in aux_outputs:
+        why = ownership_conflict(path, owned)
+        if why:
+            conflicts.append(("destination", what, path, why))
+
+    if conflicts:
+        stale = [c for c in conflicts if c[0] == "stale"]
+        for _, rid, path, why in stale:
             sys.stderr.write("  CONFLICT role %s: %s exists and is %s\n" % (rid, path, why))
-        sys.stderr.write(
-            "  These files were NOT removed and the role was NOT deactivated. An\n"
-            "  unauthorized role whose executable definition is still in place stays\n"
-            "  discoverable by the runtime. Resolve each file, then re-run.\n")
-        die(1, "%d stale agent file(s) could not be safely removed. Nothing was written."
-               % len(stale_conflicts))
+        if stale:
+            sys.stderr.write(
+                "  These files were NOT removed and the role was NOT deactivated. An\n"
+                "  unauthorized role whose executable definition is still in place stays\n"
+                "  discoverable by the runtime. Resolve each file, then re-run.\n")
+        for kind, who, path, why in conflicts:
+            if kind == "stale":
+                continue
+            sys.stderr.write("  COLLISION %s (%s) exists and is %s — not overwriting\n"
+                             % (path, who, why))
+        die(1, "%d file(s) could not be safely written or removed, so nothing was: no "
+               "file written, none removed, and no manifest or delivery record updated. "
+               "Every file above is exactly as it was found. Resolve each one, then "
+               "re-run." % len(conflicts))
 
-    collisions = written = unchanged = 0
+    written = unchanged = 0
     entries = dict(owned)
 
     for rid, old_path, direction in migrations:
@@ -1118,19 +1200,10 @@ def main(argv):
             os.remove(old_path)
             entries.pop(old_path, None)
 
-    if args.apply and any(not executable[r["id"]] for r in roles):
-        readme = os.path.join(template_dir(target, args.runtime), "README.md")
-        write_text(readme, TEMPLATE_README)
-        entries[readme] = sha256_file(readme)
-
     for role in roles:
         rid = role["id"]
         path, _other = output_paths(target, args.runtime, rid, ext, executable[rid])
         content = rendered[rid]
-        if os.path.exists(path) and path not in owned:
-            print("  COLLISION %s exists and is not ours — not overwriting" % path)
-            collisions += 1
-            continue
         if os.path.exists(path) and read_text(path) == content:
             print("  ok        %s (unchanged)" % path)
             unchanged += 1
@@ -1147,23 +1220,23 @@ def main(argv):
             write_text(path, content)
             entries[path] = sha256_file(path)
 
-    # The delivery record is written only when the render itself succeeded: a
-    # record of what was delivered must never outlive a run that delivered
-    # nothing.
-    if args.apply and not collisions:
-        record_path = os.path.join(target, ".agent-skills",
-                                   "delivered-skills-%s.json" % args.runtime)
-        write_text(record_path, delivery_record(roles, cfg, args.runtime, revision))
-        entries[record_path] = sha256_file(record_path)
-        print("  record    %s" % record_path)
+    # The auxiliary outputs follow the roles, and only here: a record of what was
+    # delivered must never outlive a run that delivered nothing. The preflight
+    # has already cleared each path, so a modified README or delivery record
+    # refused the run above rather than being overwritten at this point.
+    for path, content, tag, _what in aux_outputs:
+        if os.path.exists(path) and read_text(path) == content:
+            entries[path] = sha256_file(path)
+            continue
+        print("  %s  %s" % (tag, path))
+        if args.apply:
+            write_text(path, content)
+            entries[path] = sha256_file(path)
 
     if args.apply:
         write_manifest(target, entries)
 
-    print("\n%d written, %d unchanged, %d collision(s)." % (written, unchanged, collisions))
-    if collisions:
-        sys.stderr.write("Nothing was overwritten. Move or delete the colliding file(s) first.\n")
-        return 1
+    print("\n%d written, %d unchanged, 0 collision(s)." % (written, unchanged))
     if not args.apply:
         print("Nothing written. Re-run with --apply.")
     return 0

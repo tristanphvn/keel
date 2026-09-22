@@ -382,6 +382,47 @@ assert_contains "…with exactly the overridden tools" "$valid_body" "tools: Rea
 assert_contains "…stamped as adapter-declared"       "$valid_body" "ADAPTER-DECLARED override"
 assert_contains "…carrying the justification"        "$valid_body" "operator narrowed the read tools"
 
+# --- a derived tool list is bounded exactly as an override is -----------------
+# A tool NAME may be declared under several permission classes. Reaching it
+# through an authorized class selects every class it declares, so a name shared
+# with an unauthorized class reaches outside the authorization — and with it the
+# ceiling. The override path checked this tool by tool; the derived path walked
+# the authorized classes, collected their names and returned, never asking what
+# else those names were mapped to.
+shared() { # shared NAME TOOL_MAP_BLOCK ROLE_BLOCK
+  {
+    printf 'version: 3\n'
+    printf 'policies:\n  default:\n    claude:\n      model: sonnet\n  escalated:\n    claude:\n      model: opus\n'
+    printf '%b' "$2"
+    printf '%b' "$3"
+  } > "$CFG3/$1.yaml"
+}
+
+# documentation: floor [read], ceiling [read, write]. SharedTool is declared
+# under `read` and under `network`; the role is authorized for `read` alone.
+shared derived-shared \
+  'tool_map:\n  claude:\n    read: [SharedTool]\n    network: [SharedTool]\n' \
+  'roles:\n  documentation:\n    claude:\n      permissions: [read]\n'
+TDS="$(sandbox_new)"
+out="$($RENDER --runtime claude --target "$TDS" --config "$CFG3/derived-shared.yaml" --apply 2>&1)"; rc=$?
+assert_eq "a derived tool carrying an unauthorized class is refused" 2 "$rc"
+assert_contains "…naming the tool and the class"   "$out" "SharedTool carries network"
+assert_contains "…and the path that selected it"   "$out" "derived from its authorized permissions"
+assert_contains "…bounding both paths by one rule" "$out" "an override alike"
+assert_eq "…leaving nothing written" 0 "$(find "$TDS" -type f 2>/dev/null | wc -l)"
+
+# The same shared name is legitimate when every class it declares is explicitly
+# authorized and the authorization is still inside the ceiling.
+shared derived-shared-ok \
+  'tool_map:\n  claude:\n    read: [SharedTool]\n    write: [SharedTool, Write]\n' \
+  'roles:\n  documentation:\n    claude:\n      permissions: [read, write]\n'
+TDO="$(sandbox_new)"
+out="$($RENDER --runtime claude --target "$TDO" --config "$CFG3/derived-shared-ok.yaml" --apply 2>&1)"; rc=$?
+assert_eq "a shared tool whose every class is authorized renders" 0 "$rc"
+shared_body="$(cat "$TDO/agents/documentation.md")"
+assert_contains "…selecting the shared tool once"  "$shared_body" "tools: SharedTool, Write"
+assert_contains "…attributed to the authorization" "$shared_body" "derived from the authorized permissions [read,write]"
+
 # --- templates stay out of the runtime's discovery path -----------------------
 # A comment saying NON-EXECUTABLE does not stop a runtime listing and
 # dispatching a file in its agents directory. Placement has to do that.
@@ -545,5 +586,117 @@ out="$($RENDER --runtime claude --target "$T" --config "$CFG" --remove --apply 2
 assert_contains "the edited file is kept on removal" "$out" "KEPT (modified since render)"
 assert_file_exists "…and still on disk"              "$T/agents/review.md"
 assert_file_absent "an unmodified rendered file is removed" "$T/agents/planning.md"
+
+# --- the destination is ownership-checked before it is replaced ---------------
+# The migration preflight protected the file at the OTHER location, so a role
+# changing side never clobbered anything. The destination had no such check: the
+# write loop asked only whether the path was in the manifest, never whether the
+# bytes still matched the digest recorded for it. An edit made to a live agent
+# since the last render was therefore overwritten, and the run exited 0.
+ovr own-review 'roles:\n  review:\n    claude:\n      permissions: [read]\n'
+
+# First, the boundary the preflight must NOT block: an untouched destination whose
+# rendered content has changed is still updated in place. A digest that matches
+# what was written is exactly what makes a file safe to replace.
+ovr wider-review 'roles:\n  review:\n    claude:\n      permissions: [read, write]\n'
+TUP="$(sandbox_new)"
+$RENDER --runtime claude --target "$TUP" --config "$CFG3/own-review.yaml" --apply >/dev/null 2>&1
+assert_contains "the first render limits review to its read tools" \
+  "$(cat "$TUP/agents/review.md")" "tools: Read, Grep, Glob"
+out="$($RENDER --runtime claude --target "$TUP" --config "$CFG3/wider-review.yaml" --apply 2>&1)"; rc=$?
+assert_eq "a wider authorization re-renders the same path" 0 "$rc"
+assert_contains "…reported as an update, not a collision" "$out" "UPDATE"
+assert_contains "…and the new limit is on disk" \
+  "$(cat "$TUP/agents/review.md")" "tools: Read, Grep, Glob, Write, Edit"
+out="$($RENDER --runtime claude --target "$TUP" --config "$CFG3/wider-review.yaml" --check 2>&1)"; rc=$?
+assert_eq "…leaving the install consistent" 0 "$rc"
+
+TM="$(sandbox_new)"
+$RENDER --runtime claude --target "$TM" --config "$CFG3/own-review.yaml" --apply >/dev/null 2>&1
+assert_file_exists "an authorized role is installed" "$TM/agents/review.md"
+printf '\noperator edit\n' >> "$TM/agents/review.md"
+edited="$(sha256sum < "$TM/agents/review.md")"
+fp="$(tree_fingerprint "$TM")"
+out="$($RENDER --runtime claude --target "$TM" --config "$CFG3/own-review.yaml" --apply 2>&1)"; rc=$?
+assert_ne "a modified active agent blocks the render" 0 "$rc"
+assert_contains "…reported before anything is written" "$out" "COLLISION"
+assert_contains "…saying what is wrong with it"        "$out" "modified since it was rendered"
+assert_contains "…and refusing to claim a write"       "$out" "no manifest or delivery record updated"
+assert_eq "…the edit survives byte for byte" "$edited" "$(sha256sum < "$TM/agents/review.md")"
+assert_eq "…and nothing else in the target moved" "$fp" "$(tree_fingerprint "$TM")"
+
+# A template is a build output too, and an edited one is just as much someone's
+# work as an edited agent.
+TMT="$(sandbox_new)"
+$RENDER --runtime claude --target "$TMT" --config "$CFG3/own-review.yaml" --apply >/dev/null 2>&1
+TPLF="$TMT/.agent-skills/templates/claude/planning.md"
+printf '\noperator edit\n' >> "$TPLF"
+edited="$(sha256sum < "$TPLF")"
+fp="$(tree_fingerprint "$TMT")"
+out="$($RENDER --runtime claude --target "$TMT" --config "$CFG3/own-review.yaml" --apply 2>&1)"; rc=$?
+assert_ne "a modified template blocks the render too" 0 "$rc"
+assert_contains "…naming the file"          "$out" "planning.md"
+assert_eq "…which survives byte for byte"   "$edited" "$(sha256sum < "$TPLF")"
+assert_eq "…leaving the target untouched"   "$fp" "$(tree_fingerprint "$TMT")"
+
+# Knowing a generated file's path is not a licence to overwrite it. The README
+# and the delivery record are build outputs under the same ownership rule.
+TRM="$(sandbox_new)"
+$RENDER --runtime claude --target "$TRM" --config "$CFG3/own-review.yaml" --apply >/dev/null 2>&1
+RMF="$TRM/.agent-skills/templates/claude/README.md"
+printf '\nOperator note: our own wording, keep it.\n' >> "$RMF"
+edited="$(sha256sum < "$RMF")"
+fp="$(tree_fingerprint "$TRM")"
+out="$($RENDER --runtime claude --target "$TRM" --config "$CFG3/own-review.yaml" --apply 2>&1)"; rc=$?
+assert_ne "a modified templates README blocks the render" 0 "$rc"
+assert_contains "…named as the generated file it is" "$out" "templates README"
+assert_eq "…and preserved byte for byte" "$edited" "$(sha256sum < "$RMF")"
+assert_eq "…leaving the target untouched" "$fp" "$(tree_fingerprint "$TRM")"
+
+TDR="$(sandbox_new)"
+$RENDER --runtime claude --target "$TDR" --config "$CFG3/own-review.yaml" --apply >/dev/null 2>&1
+DRF="$TDR/.agent-skills/delivered-skills-claude.json"
+printf '\n' >> "$DRF"
+edited="$(sha256sum < "$DRF")"
+fp="$(tree_fingerprint "$TDR")"
+out="$($RENDER --runtime claude --target "$TDR" --config "$CFG3/own-review.yaml" --apply 2>&1)"; rc=$?
+assert_ne "a modified delivery record blocks the render" 0 "$rc"
+assert_contains "…named as the generated file it is" "$out" "delivery record"
+assert_eq "…and preserved byte for byte" "$edited" "$(sha256sum < "$DRF")"
+assert_eq "…leaving the target untouched" "$fp" "$(tree_fingerprint "$TDR")"
+
+# An unowned file sitting at a destination is refused as well: the promotion
+# would have replaced a file this renderer never wrote.
+TUD="$(sandbox_new)"
+$RENDER --runtime claude --target "$TUD" --config "$CFG3/own-review.yaml" --apply >/dev/null 2>&1
+assert_file_exists "planning starts as a template" "$TUD/.agent-skills/templates/claude/planning.md"
+mkdir -p "$TUD/agents"
+printf 'someone else put this here\n' > "$TUD/agents/planning.md"
+ovr promote-planning 'roles:\n  review:\n    claude:\n      permissions: [read]\n  planning:\n    claude:\n      permissions: [read]\n'
+out="$($RENDER --runtime claude --target "$TUD" --config "$CFG3/promote-planning.yaml" --apply 2>&1)"; rc=$?
+assert_ne "an unowned destination blocks the promotion" 0 "$rc"
+assert_contains "…as not this renderer's to replace" "$out" "not written by this renderer"
+assert_eq "…and is left exactly as found" "someone else put this here" "$(cat "$TUD/agents/planning.md")"
+assert_file_exists "…the template it would have replaced is intact" \
+  "$TUD/.agent-skills/templates/claude/planning.md"
+
+# One conflict fails the whole batch. Writing the roles that happen to be clean
+# would leave the target half-migrated, described by a manifest and a delivery
+# record for a delivery that did not take place.
+TBA="$(sandbox_new)"
+ovr batch-before 'roles:\n  review:\n    claude:\n      permissions: [read]\n  planning:\n    claude:\n      permissions: [read]\n'
+$RENDER --runtime claude --target "$TBA" --config "$CFG3/batch-before.yaml" --apply >/dev/null 2>&1
+assert_file_exists "review starts installed"   "$TBA/agents/review.md"
+assert_file_exists "planning starts installed" "$TBA/agents/planning.md"
+# review is edited, and in the same run planning loses its authorization — an
+# unrelated deactivation, plus the template write that goes with it.
+printf '\noperator edit\n' >> "$TBA/agents/review.md"
+fp="$(tree_fingerprint "$TBA")"
+out="$($RENDER --runtime claude --target "$TBA" --config "$CFG3/own-review.yaml" --apply 2>&1)"; rc=$?
+assert_ne "one conflict fails the whole batch" 0 "$rc"
+assert_file_exists "…the unrelated migration did not happen" "$TBA/agents/planning.md"
+assert_file_absent "…nor the template write that went with it" \
+  "$TBA/.agent-skills/templates/claude/planning.md"
+assert_eq "…and not one byte of the target changed" "$fp" "$(tree_fingerprint "$TBA")"
 
 t_summary

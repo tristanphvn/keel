@@ -88,6 +88,21 @@ the `tool_map`, no tool may carry a permission class outside the authorized set,
 and the role's floor must still be covered. A justification records *why* an
 operator narrowed the tools; it exempts nothing.
 
+Both paths go through **one** tool-list check, because a tool name may be
+declared under more than one class:
+
+```yaml
+tool_map:
+  claude:
+    read:    [SharedTool]
+    network: [SharedTool]
+```
+
+Authorizing `read` here selects `SharedTool`, and `SharedTool` declares
+`network` as well. Deriving the list from the authorized classes does not make
+that second class go away, so a name mapped outside the authorized set is
+refused whichever path selected it — derived or overridden.
+
 What the map does and does not establish: it says which classes a tool **name**
 is declared to carry, so a tool outside the authorization can be refused before
 anything is written. It does not confine what a tool does once it runs — a shell
@@ -182,10 +197,24 @@ Rendered files are recorded with their hashes in
 `<target>/.agent-skills/routing-manifest.tsv`, templates included, so `--remove`
 cleans up both.
 
+One ownership test decides every file a render touches, and it runs as a
+**preflight**: each destination, each file at the *other* location, and the
+generated auxiliary files (the templates `README.md` and the delivery record)
+are all checked before the first byte is written.
+
 - A file at a target path that is not in the manifest is a collision: reported,
   non-zero exit, never overwritten.
+- A file that **is** in the manifest but whose digest no longer matches what was
+  recorded for it carries an edit made since the render, and is treated exactly
+  the same way. Being a known path is not what makes a file safe to replace;
+  matching the digest it was written with is.
+- One conflict refuses the **whole run** — no file written, none removed, no
+  migration performed, and no manifest or delivery record updated. A partial
+  apply would leave the target half-migrated and then describe it with a
+  delivery record for a delivery that did not happen.
 - `--remove` deletes only manifest entries whose content still matches; an
-  edited file is `KEPT (modified since render)`.
+  edited file is `KEPT (modified since render)`. Unlike a render, it removes the
+  files it can and still exits 0.
 - `--check` fails on a missing, stale or unowned file.
 
 ## Config format

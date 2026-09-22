@@ -199,6 +199,71 @@ Transitions are the dangerous part, so they are explicit:
   exits non-zero having written nothing. Claiming a deactivation that did not
   happen would be worse than failing: the role would still be dispatchable.
 
+---
+
+## Follow-up: two further PR #5 defects
+
+Reviewed head `92e5fa7`. Both reproduced against that source before any change.
+
+### A modified destination file was overwritten
+
+The preflight for a role *changing sides* checked the file at the other location
+against the manifest digest. The write loop, dealing with the destination, asked
+only whether the path was **in** the manifest — never whether the bytes still
+matched the digest recorded for it. An owned path was therefore treated as a free
+path.
+
+| Step | Before |
+| --- | --- |
+| render an authorized role, digest recorded | `381eeac5…` in the manifest and on disk |
+| append an operator edit | `d1b97b0a…` on disk |
+| render again at the same location | exit **0**, file back to `381eeac5…`, edit gone |
+| append an edit to the templates `README.md` | overwritten the same way |
+
+The ownership question is now asked once, by `ownership_conflict()`, for every
+file a render touches — each destination, each migration source, and the
+generated auxiliary files — and it is asked as a **preflight**, before the first
+mutation. Not in the manifest means someone else's file; in the manifest with a
+digest that no longer matches means someone's edit. Both are preserved and
+reported, and a conflict anywhere refuses the whole run: nothing written, nothing
+removed, no migration performed, no manifest and no delivery record updated.
+
+The auxiliary files are in scope because they are build outputs like any other. A
+templates `README.md` is not overwritable merely because the renderer knows its
+path; nor is the delivery record.
+
+Batch atomicity is the point of the preflight rather than a side effect. The
+previous code counted collisions mid-loop and carried on, so an unrelated role
+was still written, an unrelated migration still performed, and the manifest still
+rewritten — leaving a half-migrated target described by a delivery record for a
+delivery that did not happen.
+
+### Derived tool lists bypassed the multi-class check
+
+`effective_tools()` checked every *override* tool's mapped classes against the
+authorization. The derived path walked the authorized classes, collected their
+tool names and returned without ever asking what else those names were mapped to.
+
+Reproduced with floor `[read]`, ceiling `[read, write]`, authorized `[read]`,
+`tool_map: read → [SharedTool], network → [SharedTool]`, no override:
+
+| Path | Before |
+| --- | --- |
+| derived | `(['SharedTool'], 'authorized', 'read')` — accepted, and `SharedTool` declares `network`, outside the authorization and the ceiling |
+| the same tool named as an override | already refused, exit 2 |
+
+One shared gate, `check_tool_selection()`, now validates both paths: every
+selected tool must be described by the map, and none may declare a class outside
+the authorized set. The floor, ceiling, unknown-class, unmapped-class and
+empty-override checks are unchanged and still run.
+
+This concerns **declared mappings**. It does not claim the map confines what a
+tool does once it runs — the same limit already recorded above.
+
+Neither shipped `tool_map` (`models.example.yaml`, and the local `models.yaml`)
+declares a tool name under two classes, so no currently rendered output changes.
+The check closes the path, it does not alter today's results.
+
 ### Canonical positions carried forward
 
 Contract 0.3.0 stays draft. A probe of separate writable workspaces and
