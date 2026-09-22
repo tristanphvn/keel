@@ -11,7 +11,8 @@ version: 1
 updated: 2026-09-21
 
 conventions:
-  skill_path: {{AGENT_HOME}}/skills/<skill-name>/SKILL.md
+  skill_path: >-
+    {{AGENT_HOME}}/skills/<skill-name>/SKILL.md
   naming: <domain>-<skill-name>
   domains: [core, review, eng, design, sec, data, ops]
   project_skill_path: <repository>/<agent-config-dir>/skills/
@@ -221,7 +222,6 @@ skills:
     rules: [VERIFY-002, VERIFY-003, TEST-001, REVIEW-002, SCOPE-003]
     version: 1
 
-# Planned — architecture only, not yet authored. Do not create until requested.
   - id: core-english-work-coach
     legacy_name: english-work-coach
     domain: core
@@ -233,6 +233,7 @@ skills:
     version: 1
     notes: Explicit activation or an established coaching session only; runtime copies derive from skills/english-work-coach.
 
+# Planned — architecture only, not yet authored. Do not create until requested.
 planned:
   - id: core-source-grounding
     domain: core

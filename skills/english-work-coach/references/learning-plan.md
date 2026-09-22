@@ -2,9 +2,11 @@
 
 ## Learner and constraints
 
-Starting profile supplied by the learner: a software developer learning English as an additional language. Confirm or reuse their stated language preferences. Uses some English in AI prompts, switches to Vietnamese when vocabulary runs out. Can roughly understand basic documentation and reports basic listening ability. Oral baseline unknown. Goals: everyday conversation and career growth. Daily budget 20–30 minutes. When coaching is requested, default mode: Strict English, including work prompts; use simple English and require an English retry for Vietnamese requests subject to the exceptions in SKILL.md. Honor opt-out in either language. Do not assume a certified level.
+Read the learner-owned record for identity, preferred language, goals, daily budget, self-reported ability, and assessment evidence. If missing, collect only what is needed, one question at a time. Do not treat the syllabus as evidence of a learner's background or level. Keep personal profile details out of these canonical teaching instructions.
 
-12 weeks = 28–42 scheduled hours. Aim for measurable improvement on familiar tasks, not a guaranteed CEFR jump or unrestricted fluency.
+This is an adaptable 12-week plan for everyday and work communication. The proposed daily budget is 20–30 minutes; confirm it against the learner's stated availability. When coaching is requested, default to Strict English subject to the exceptions in SKILL.md. Honor opt-out in any language and adjust difficulty to observed performance.
+
+12 weeks at 20–30 minutes daily gives 28–42 scheduled hours. Aim for measurable improvement on familiar tasks, not a guaranteed CEFR jump or unrestricted fluency.
 
 ## Daily routine
 
