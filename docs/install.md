@@ -33,6 +33,7 @@ What it guarantees:
 | --- | --- |
 | A dry run changes nothing | No directory is created and no file is written unless `--apply` is passed. Asserted by comparing a full hash fingerprint of the tree before and after. |
 | Your own files survive | Only paths the repo ships are written. Anything else is reported as `LOCAL-ONLY` and left alone. `CLAUDE.md`, `settings.json` and `hooks` are backed up but never written by the installer. |
+| Your edits to an installed file survive | Before anything is written, every destination is compared against the hash recorded for it in the manifest. A file you edited since it was installed is reported as `CONFLICT`, and the whole run refuses — no write, no backup, no manifest update. This is conflict protection, not transactional atomicity: it prevents a bad run from starting, it does not make the write loop crash-safe. |
 | A failed write cannot truncate a file | Every file is rendered to a temporary path and moved into place. |
 | Backups are real | Before the first write, everything that could be overwritten is copied to `$AGENT_HOME/backups/install-<timestamp>/` and compared back. A backup that does not verify aborts the run before anything is written. |
 | Dependencies are checked first | Missing tools are listed up front, not discovered halfway through. |
@@ -52,6 +53,21 @@ Useful variables:
 `$AGENT_HOME/.agent-skills/manifest.tsv`. That file is what makes removal safe:
 without it nothing can be proven to belong to the installer, and the uninstaller
 refuses to guess.
+
+The same hash is what makes *writing* safe. Installing again compares each
+destination against the hash recorded for it. Three outcomes:
+
+- unchanged since install, and the repo has moved on — overwritten, as intended;
+- unchanged since install, and the repo agrees — nothing to do;
+- **changed since install** — you edited it. Reported as `CONFLICT (edited since
+  installed, would be overwritten)`, and the run stops before writing anything,
+  taking a backup, or touching the manifest. Save the edit elsewhere or restore
+  the file, then re-run.
+
+A destination the installer never recorded is reported as `OVERWRITE (not
+recorded by this installer)` and is still written, because the verified backup
+covers it and refusing would break a first install onto a directory that already
+has its own files at those paths.
 
 A file that was installed previously but is no longer shipped is reported as
 `STALE`. It is never deleted by the installer.
@@ -120,6 +136,12 @@ Renders the 14 canonical role profiles into agent definitions and binds the
 contract's logical model policies to concrete models. See [routing.md](routing.md).
 Installation does not require it.
 
+Only roles with an explicit authorized permission set are installed as active
+agents in `<target>/agents/`. The rest are written as templates under
+`<target>/.agent-skills/templates/<runtime>/`, which no runtime scans — a role
+the operator has not authorized is not merely labelled non-executable, it is not
+installed where anything could dispatch it.
+
 ## Runtime capability records
 
 ```bash
@@ -142,7 +164,7 @@ Measuring a runtime is a separate, deliberate act:
 ```bash
 bash tests/probes/tool-isolation.sh
 bash tests/probes/fresh-context.sh
-bash tests/probes/workspace-isolation.sh
+bash tests/probes/filesystem-read-confinement.sh
 ```
 
 These are not in `tests/run.sh` — they need credentials, network and billable

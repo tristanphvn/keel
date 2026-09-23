@@ -74,18 +74,50 @@ tool_map:
 # tools are limited, the renderer PRELOADS the canonical skill bodies instead of
 # widening the permission. The copies carry their source path and sha256.
 roles:
-  documentation:
-    codex:
-      sandbox_mode: workspace-write
+  # `permissions` is the AUTHORIZED permission set for this role on this host:
+  # what an operator actually grants. The contract's inequality applies —
+  #
+  #     role.required_permissions  ⊆  permissions  ⊆  role.permission_ceiling
+  #
+  # — and the renderer checks both halves. The floor is a minimum, not an
+  # allowlist: `review` has a `read` floor but is authorized `read, write` here
+  # so it can save its report, which is the contract's own example.
+  #
+  # Without a `permissions` entry the renderer produces a NON-EXECUTABLE
+  # TEMPLATE: it will not claim an authorized, restricted execution from a role
+  # profile alone, because an agent file with no tool limit inherits whatever
+  # the parent has.
   review:
+    claude:
+      permissions: [read, write]
     codex:
       sandbox_mode: read-only
   security:
+    claude:
+      permissions: [read, execute]
     codex:
       sandbox_mode: read-only
+  testing:
+    claude:
+      permissions: [read, execute]
+  documentation:
+    claude:
+      permissions: [read, write]
+    codex:
+      sandbox_mode: workspace-write
 
-# Until the canonical role profiles declare `required_permissions`, roles render
-# with no tool limit and inherit the parent's tools. That is deliberately visible
-# rather than patched over here: the canonical model has not yet stated what each
-# role needs, and an adapter inventing the answer is the defect this version
-# removed. See docs/decisions/0001-contract-c1-c5.md.
+# Authorization is scoped per runtime here, because a grant is only meaningful
+# where the tools that implement it exist. It may also be written once per role
+# (`permissions:` directly under the role) or run-wide as
+# `default_authorized_permissions:`; the most specific wins.
+#
+# Nothing is authorized for Codex, deliberately. Its tool_map is empty because no
+# Codex tool identifier has been verified here, so an authorized Codex role would
+# fail with an unmapped-class error — which is the honest outcome. Codex roles
+# therefore render as non-executable templates until a measured mapping exists.
+# default_authorized_permissions: [read]
+
+# `tools_override` remains available for an operator exception the contract does
+# not cover. It still has to satisfy the role's floor — a justification does not
+# exempt it — and an explicitly empty list means NO tools, never inherited ones.
+# See docs/decisions/0001-contract-c1-c5.md and 0004-permission-capability-review.md.

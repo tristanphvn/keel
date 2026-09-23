@@ -106,11 +106,80 @@ INSTALLED_PATHS=""
 record() { INSTALLED_PATHS="$INSTALLED_PATHS$1
 "; }
 
+# The hash recorded for a path on the previous run, or non-zero if this
+# installer never wrote it.
+prev_digest() {
+  [ -f "$MANIFEST" ] || return 1
+  awk -F'\t' -v p="$1" '$1 == p { print $2; found = 1; exit } END { exit !found }' "$MANIFEST"
+}
+
+# Every file this run would install, as "<source>\t<destination>". This mirrors
+# the mapping the write loop performs; the two have to change together.
+each_target() {
+  while IFS= read -r _pair; do
+    [ -z "$_pair" ] && continue
+    _psrc="$ROOT/${_pair%%|*}"
+    _pdst="$(resolve_dst "${_pair#*|}")"
+    [ -e "$_psrc" ] || continue
+    # A symlinked destination is refused wholesale below; do not report its
+    # contents a second time here.
+    [ -L "$_pdst" ] && continue
+    if [ -d "$_psrc" ]; then
+      while IFS= read -r _f; do
+        printf '%s\t%s\n' "$_f" "$_pdst/${_f#"$_psrc"/}"
+      done < <(find "$_psrc" -type f)
+    else
+      printf '%s\t%s\n' "$_psrc" "$_pdst"
+    fi
+  done <<EOF
+$PAIRS
+EOF
+}
+
 echo "repo:        $ROOT"
 echo "destination: $DEST"
 [ "$SKILLS_DEST" = "$DEST/skills" ] || echo "skills:      $SKILLS_DEST (AGENT_SKILLS_DIR override)"
 [ "$APPLY" -eq 1 ] && echo "mode:        APPLY" || echo "mode:        DRY RUN (pass --apply to write)"
 echo
+
+# --- ownership preflight -----------------------------------------------------
+# The manifest records what this installer wrote and the hash it wrote. The
+# uninstaller already trusts exactly that: it removes a file only while it is
+# still byte-identical to what was installed, and reports anything else as
+# KEPT (modified since install). The installer did not. It compared the
+# destination against the rendered source and overwrote whenever the two
+# differed, so "the user edited this file" and "the repo moved on" were
+# indistinguishable, and a local customization was silently replaced. The hash
+# needed to tell them apart was written on every run and then loaded with
+# `cut -f1`, which discarded it.
+#
+# This is conflict protection, not transactional atomicity. It refuses before
+# the first write; it does not make the write loop itself crash-safe. A failure
+# part-way through still leaves a partially updated tree, and the verified
+# backup below is what covers that.
+conflicts=0
+while IFS="$(printf '\t')" read -r psrc pdst; do
+  [ -z "$pdst" ] && continue
+  [ -f "$pdst" ] || continue
+  # This run would not change the bytes, so there is nothing to lose.
+  render "$psrc" | cmp -s - "$pdst" && continue
+  # Absent from the manifest: this installer never wrote it. Reported by the
+  # write loop rather than blocked here — the verified backup covers it, and
+  # refusing would break a first install onto a machine that already has files
+  # of its own at these paths.
+  prev_recorded="$(prev_digest "$pdst")" || continue
+  [ "$(as_sha256 "$pdst")" = "$prev_recorded" ] && continue
+  echo "  CONFLICT (edited since installed, would be overwritten) $pdst"
+  conflicts=$((conflicts + 1))
+done < <(each_target)
+
+if [ "$conflicts" -gt 0 ]; then
+  echo
+  echo "$conflicts installed file(s) carry local edits this run would replace." >&2
+  echo "Nothing was written, no backup was taken, and the manifest is unchanged." >&2
+  echo "Save the edits elsewhere or restore the file, then re-run." >&2
+  exit 1
+fi
 
 if [ "$APPLY" -eq 1 ]; then
   stamp="$(date +%Y%m%d-%H%M%S)"
@@ -173,7 +242,15 @@ while IFS= read -r pair; do
       if [ ! -f "$target" ]; then
         echo "  NEW      $target"; changed=$((changed + 1))
       elif ! render "$f" | cmp -s - "$target"; then
-        echo "  OVERWRITE $target"; changed=$((changed + 1))
+        # The preflight cleared every file it recognises, so anything still
+        # differing here is either this installer's own output moving forward
+        # or a file it never wrote. Say which.
+        if prev_digest "$target" >/dev/null; then
+          echo "  OVERWRITE $target"
+        else
+          echo "  OVERWRITE (not recorded by this installer) $target"
+        fi
+        changed=$((changed + 1))
       fi
       if [ "$APPLY" -eq 1 ]; then
         write_rendered "$f" "$target" || { echo "  FAILED   $target"; failed=$((failed + 1)); }

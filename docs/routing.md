@@ -78,9 +78,37 @@ visible in the generated file:
 
 | `tool limit:` says | Meaning |
 | --- | --- |
-| `derived from the role's required_permissions` | contract-driven, deterministic |
-| `ADAPTER-DECLARED override — <justification>` | an operator decision, labelled as one |
-| `none (role declares no required_permissions; the agent inherits)` | the canonical model has not said what the role needs |
+| `derived from the authorized permissions [...]` | contract-driven and deterministic |
+| `ADAPTER-DECLARED override — <justification>` | an operator narrowing, labelled as one |
+| `NONE - no authorized permission set was supplied` | a template: not executable, and not installed |
+
+An override is an executable configuration, so it is bounded exactly like a
+derived list: it requires an authorization, every tool it names must be known to
+the `tool_map`, no tool may carry a permission class outside the authorized set,
+and the role's floor must still be covered. A justification records *why* an
+operator narrowed the tools; it exempts nothing.
+
+Both paths go through **one** tool-list check, because a tool name may be
+declared under more than one class:
+
+```yaml
+tool_map:
+  claude:
+    read:    [SharedTool]
+    network: [SharedTool]
+```
+
+Authorizing `read` here selects `SharedTool`, and `SharedTool` declares
+`network` as well. Deriving the list from the authorized classes does not make
+that second class go away, so a name mapped outside the authorized set is
+refused whichever path selected it — derived or overridden.
+
+What the map does and does not establish: it says which classes a tool **name**
+is declared to carry, so a tool outside the authorization can be refused before
+anything is written. It does not confine what a tool does once it runs — a shell
+authorized for `execute` can still write files and reach the network. Only the
+runtime can prevent that, and whether it does is a capability question answered
+by evidence, never by this table.
 
 Version 3 **refuses** a per-role `tools:` list. Choosing a tool limit per role is
 behavioural — removing an execute tool turns a role's result into `blocked` — so
@@ -133,15 +161,60 @@ the offending roles. Required instructions are never truncated: raise the
 runtime's limit, or move those roles to `skill_delivery: reference` and accept
 that they need their Skill tool.
 
+## Where rendered roles are stored
+
+Placement, not wording, is what keeps an unauthorized role from being dispatched:
+
+| Role | Written to | Discovered by the runtime |
+| --- | --- | --- |
+| authorized | `<target>/agents/<id>.<ext>` | yes — this is the installed, active agent |
+| unauthorized | `<target>/.agent-skills/templates/<runtime>/<id>.<ext>` | **no** |
+
+Both runtimes scan their `agents` directory. A comment saying NON-EXECUTABLE
+does not stop a runtime listing and dispatching a file it finds there, so a
+template is written somewhere the runtime never looks, alongside a README
+explaining why.
+
+### Changing sides
+
+A role that gains or loses its authorization must not leave its old file behind:
+an executable that becomes a template would otherwise stay discoverable.
+
+- The old file is removed only when this renderer **owns** it (it is in the
+  manifest) **and** its digest still matches what was written. Reported as
+  `DEACTIVATE` or `PROMOTE`.
+- A file that was modified since it was rendered, or that this renderer never
+  wrote, is **preserved**. The run reports a `CONFLICT`, writes nothing, and
+  exits non-zero — it will not claim a deactivation that did not happen. An
+  unauthorized role whose executable definition is still in place is still
+  dispatchable, and saying otherwise would be the worst outcome here.
+- `--check` fails if a role is missing from its expected location, is stale, is
+  unowned, or has a copy at the *other* location.
+
 ## Ownership
 
 Rendered files are recorded with their hashes in
-`<target>/.agent-skills/routing-manifest.tsv`.
+`<target>/.agent-skills/routing-manifest.tsv`, templates included, so `--remove`
+cleans up both.
+
+One ownership test decides every file a render touches, and it runs as a
+**preflight**: each destination, each file at the *other* location, and the
+generated auxiliary files (the templates `README.md` and the delivery record)
+are all checked before the first byte is written.
 
 - A file at a target path that is not in the manifest is a collision: reported,
   non-zero exit, never overwritten.
+- A file that **is** in the manifest but whose digest no longer matches what was
+  recorded for it carries an edit made since the render, and is treated exactly
+  the same way. Being a known path is not what makes a file safe to replace;
+  matching the digest it was written with is.
+- One conflict refuses the **whole run** — no file written, none removed, no
+  migration performed, and no manifest or delivery record updated. A partial
+  apply would leave the target half-migrated and then describe it with a
+  delivery record for a delivery that did not happen.
 - `--remove` deletes only manifest entries whose content still matches; an
-  edited file is `KEPT (modified since render)`.
+  edited file is `KEPT (modified since render)`. Unlike a render, it removes the
+  files it can and still exits 0.
 - `--check` fails on a missing, stale or unowned file.
 
 ## Config format

@@ -1,5 +1,12 @@
 # DR-0002 — Machine-readable runtime capability records (M1)
 
+> **One conclusion in this record was later withdrawn.** The
+> `workspace-isolation` verdict below rested on a probe that measured filesystem
+> read confinement, which is a different property from providing a separate
+> writable workspace. Codex's review caught it; DR-0004 reclassifies the
+> capability as `unmeasured` and keeps the read observation under its own name.
+> The design decisions in this record stand.
+
 Date: 2026-09-21 · Branch: `integration/contracts-v1-runtime` · Baseline: `e566f64`
 Contract: 0.3.0 draft, unchanged by this milestone.
 
@@ -142,7 +149,7 @@ roles today — rendering proceeds unchanged and no record is needed.
 | `model-selection` | observed | child `claude-sonnet-5` under parent `claude-haiku-4-5-20251001` |
 | `tool-isolation` | **enforced** | `tests/probes/tool-isolation.sh`, three-part |
 | `fresh-context` | observed | `tests/probes/fresh-context.sh`, two-canary |
-| `workspace-isolation` | **unavailable** | `tests/probes/workspace-isolation.sh`: the child read a file outside the session directory, with the in-workspace control read succeeding in the same session |
+| `workspace-isolation` | ~~unavailable~~ **superseded — now `unmeasured`** | the cited probe measured read confinement, not workspace allocation; see DR-0004 |
 | instruction truncation | unmeasured | the 32 KiB budget is configuration, not a measured truncation point |
 
 Codex: no record claiming availability. The CLI is absent, so every capability is

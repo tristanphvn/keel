@@ -97,7 +97,8 @@ adapter-owned routing configuration therefore reaches the runtime.
 | `model-selection` | yes | transcript model differs from the parent's, as bound |
 | `tool-isolation` | **enforced** | a restricted child emitted a real `tool_use` for an excluded tool and the runtime answered `is_error=true`; an identical child *with* that tool succeeded in the same session |
 | `fresh-context` | **observed** | a canary stated only in the parent conversation never appeared in the child's transcript, while a canary passed through the child's own prompt was reported back |
-| `workspace-isolation` | **unavailable** | the child read a canary file outside the session directory; the in-workspace control read succeeded in the same session |
+| `workspace-isolation` | **unmeasured** | no probe has tested whether a separate writable workspace is provided; see below |
+| filesystem read confinement (an observation, not a contract capability) | **unconfined** | the child read a canary file outside the session directory, with the in-directory control read succeeding in the same session |
 
 ### Tool isolation — how it was proven
 
@@ -144,13 +145,29 @@ Recorded as `observed`, not `enforced`: the capability is about what the child
 *received*, read from the runtime's own transcript. There is no prevention step
 to catch it in the act.
 
-### Workspace isolation — measured **unavailable**
+### Workspace isolation — **unmeasured**, and why the earlier verdict was wrong
 
-`tests/probes/workspace-isolation.sh` writes a canary outside the session's
-working directory and instructs the child to read it for real. The child emitted
-a `tool_use` for the out-of-scope absolute path and received the file content,
-with no error; the in-workspace control read succeeded in the same session. So
-the runtime imposes no workspace boundary on sub-agent file access here.
+The contract defines `workspace-isolation` as providing a *separate writable
+workspace* for a task. An earlier pass recorded it as `unavailable` on the
+strength of an outside-**read** probe. Codex's review caught the mismatch and it
+is corrected here: the two are different properties. Separate worktrees can give
+each task its own writable location while still permitting reads elsewhere, so an
+unconfined read neither establishes nor refutes workspace allocation.
+
+The capability is therefore `unmeasured`, and stays that way until a probe
+actually checks distinct workspaces and independent writes.
+
+### Filesystem read confinement — **unconfined** (an observation)
+
+`tests/probes/filesystem-read-confinement.sh` writes a canary outside the
+session's working directory and instructs the child to read it for real. The
+child emitted a `tool_use` for the out-of-scope absolute path and received the
+file content with no error, while the in-directory control read succeeded in the
+same session. Reads were not confined in the execution tested.
+
+This is recorded under `observations` in the capability record, with
+`not_a_claim_about: [workspace-isolation]`. It decides no contract capability and
+is never consulted when deciding whether a role may render.
 
 Two earlier runs of this probe returned INCONCLUSIVE rather than a verdict, and
 both were right to: first the permission prompt denied *both* reads in

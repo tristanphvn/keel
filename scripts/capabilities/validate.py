@@ -26,7 +26,7 @@ import json
 import os
 import sys
 
-RECORD_VERSION = 1
+RECORD_VERSION = 2
 
 
 def read_json(path):
@@ -115,6 +115,60 @@ def run_schema(root, records):
     return rep.done()
 
 
+class _Collector(object):
+    """A Report that keeps failures instead of printing them."""
+
+    def __init__(self):
+        self.failures = []
+        self.checks = 0
+
+    def check(self, name, ok, detail=""):
+        self.checks += 1
+        if not ok:
+            self.failures.append("%s%s" % (name, (" — " + detail) if detail else ""))
+        return ok
+
+
+def validate_record_file(root, path):
+    """Canonically validate ONE record. Returns (ok, [problem, ...]).
+
+    This is the entry point other tooling calls — notably the renderer, before a
+    record is allowed to authorise anything. Keeping it here rather than
+    reimplementing the checks at the call site is the point: a second, weaker
+    copy of "is this record trustworthy" is how a record claiming `enforced`
+    with no evidence gets accepted.
+
+    It validates a record. It does not re-run a probe, and says nothing about
+    whether the runtime still behaves as the record says.
+    """
+    problems = []
+    try:
+        read_json(path)
+    except ValueError as exc:
+        return False, ["%s: invalid JSON: %s" % (os.path.basename(path), exc)]
+    except IOError as exc:
+        return False, ["%s: cannot read: %s" % (os.path.basename(path), exc)]
+
+    try:
+        from jsonschema import Draft202012Validator
+    except ImportError:
+        # Fail closed: an unvalidated record must not authorise rendering.
+        return False, [
+            "the `jsonschema` package is required to validate a capability record "
+            "before it authorises rendering (pip install jsonschema). An unvalidated "
+            "record is not evidence."]
+
+    schema = read_json(os.path.join(root, "capabilities", "runtime-capability.schema.json"))
+    validator = Draft202012Validator(schema)
+    errors = sorted(validator.iter_errors(read_json(path)), key=lambda e: list(e.path))
+    problems += ["schema: %s" % e.message for e in errors[:5]]
+
+    collector = _Collector()
+    semantic_record(root, path, evidence_requirements(root), collector)
+    problems += collector.failures
+    return (not problems), problems
+
+
 def semantic_record(root, path, requirements, rep):
     name = os.path.basename(path)
     rec = read_json(path)
@@ -123,8 +177,14 @@ def semantic_record(root, path, requirements, rep):
               rec.get("record_version") == RECORD_VERSION, repr(rec.get("record_version")))
 
     # A record filename that disagrees with its content is a trap for whoever
-    # picks a record by name later.
-    if rec.get("status") == "measured":
+    # picks a record by name later — but that is a convention of this
+    # repository's records directory, not a property of a record. An operator
+    # keeping records elsewhere, or passing one by an arbitrary path, is not
+    # writing an invalid record, so the check is scoped to where the convention
+    # applies.
+    in_records_dir = os.path.dirname(os.path.abspath(path)) == \
+        os.path.join(os.path.abspath(root), "capabilities", "records")
+    if rec.get("status") == "measured" and in_records_dir:
         expected = "%s-%s-%s.json" % (rec["runtime"]["family"], rec["runtime"]["version"],
                                       rec["platform"]["os"])
         rep.check("%s: filename matches runtime, version and platform" % name,
@@ -168,6 +228,30 @@ def semantic_record(root, path, requirements, rep):
                 rep.check("%s/%s: probe digest still matches the tree" % (name, cap),
                           actual == e.get("probe_sha256"),
                           "recorded %s, actual %s" % (str(e.get("probe_sha256"))[:12], actual[:12]))
+
+    # Observations are not capability claims, but their evidence is held to the
+    # same standard: a probe that no longer exists, or whose content has since
+    # changed, cannot support the observation recorded from it.
+    for obs in rec.get("observations") or []:
+        oid = obs.get("id")
+        for e in obs.get("evidence") or []:
+            probe = e.get("probe", "")
+            probe_path = os.path.join(root, probe)
+            exists = os.path.isfile(probe_path)
+            rep.check("%s: observation %s probe %s exists" % (name, oid, probe), exists)
+            if exists:
+                actual = sha256_file(probe_path)
+                rep.check("%s: observation %s probe digest still matches" % (name, oid),
+                          actual == e.get("probe_sha256"),
+                          "recorded %s, actual %s" % (str(e.get("probe_sha256"))[:12], actual[:12]))
+        # An observation that silently decided a capability is the failure this
+        # section exists to prevent, so the disclaimer is required to be honest.
+        for cap in obs.get("not_a_claim_about") or []:
+            state = ((rec.get("capabilities") or {}).get(cap) or {}).get("state")
+            rep.check("%s: observation %s does not also decide %s" % (name, oid, cap),
+                      state in (None, "unmeasured", "documented"),
+                      "%s is recorded as %r while an observation disclaims measuring it"
+                      % (cap, state))
 
     for cap in sorted(requirements):
         if cap not in (rec.get("capabilities") or {}):
