@@ -1,5 +1,5 @@
 {
-  "contract_version": "0.2.0",
+  "contract_version": "0.3.0",
   "kind": "role",
   "id": "ux-ui",
   "purpose": "Design usable flows consistent with established visual authority.",
@@ -33,5 +33,8 @@
     "read",
     "write",
     "execute"
+  ],
+  "required_permissions": [
+    "read"
   ]
 }

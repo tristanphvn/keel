@@ -1,5 +1,5 @@
 {
-  "contract_version": "0.2.0",
+  "contract_version": "0.3.0",
   "kind": "role",
   "id": "orchestrator",
   "purpose": "Coordinate only the roles needed to complete the accepted objective.",
@@ -42,5 +42,8 @@
     "execute",
     "network",
     "delegate"
+  ],
+  "required_permissions": [
+    "read"
   ]
 }

@@ -1,5 +1,5 @@
 {
-  "contract_version": "0.2.0",
+  "contract_version": "0.3.0",
   "kind": "role",
   "id": "research",
   "purpose": "Answer bounded questions using traceable evidence.",
@@ -32,5 +32,8 @@
     "read",
     "write",
     "network"
+  ],
+  "required_permissions": [
+    "read"
   ]
 }

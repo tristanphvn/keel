@@ -1,4 +1,22 @@
-# Agent work contract — 0.2.0 draft
+# Agent work contract — 0.3.0 draft
+
+> **0.3.0 supersedes 0.2.0.** Three optional additions and no removals, but the
+> version moved because this document requires it: "Any schema/enum change
+> requires a new contract version", and every definition sets
+> `additionalProperties: false`, so a 0.2.0 reader must reject a document
+> carrying the new fields. Keeping the old version number would have produced
+> exactly the silent incompatibility that rule exists to prevent.
+>
+> | Change | Where | Why |
+> | --- | --- | --- |
+> | optional `required_permissions` | role | a permission floor, so tool limits stop being invented by adapters |
+> | optional `delivered_skills` | result provenance | records which skill bodies an adapter delivered, and by which mechanism |
+> | second canonical example pair | `contracts/examples/*-completed.json` | acceptance and evidence semantics exercised by shipped documents, not only by synthetic fixtures |
+>
+> Rationale and the rejected alternatives: `docs/decisions/0001-contract-c1-c5.md`.
+> Still draft. Not stable. The 0.2.0 delivery records in
+> `docs/orchestration-validation.md` and `docs/orchestration-handoff.md` describe
+> that version as shipped and are deliberately left unedited.
 
 This is the canonical, runtime-independent interface between role/skill authors
 and adapter implementers. It describes behavior and data, not an executable
@@ -79,6 +97,42 @@ and `delegate`. A role's `permission_ceiling` is an upper bound, not a grant.
 Task permissions must be a subset of that ceiling and intersect with platform
 restrictions and actual user authorization. Capability flags also grant nothing.
 
+A role may declare optional `required_permissions`: the minimum classes necessary
+for its core responsibility. This floor must be a subset of the ceiling. It is
+an eligibility condition, never an authorization or a complete tool allowlist.
+For each task, check both inequalities:
+
+`role.required_permissions ⊆ task.permissions ⊆ role.permission_ceiling`.
+
+Apply user authorization and runtime restrictions too; if the remaining effective
+permissions cannot meet the floor or task acceptance, report the task blocked.
+Task-specific operations may need permissions above the role floor: a review
+report saved to disk needs `write`, while a conversational review does not;
+Research may use supplied sources without network access; Orchestrator may work
+directly without `delegate`. Backend/Frontend require `read, write` for their
+implementation responsibility; Testing requires `read, execute` for behavioral
+execution; all other initial profiles have a `read` floor. Extra checks, artifact
+writes, external retrieval and delegation must be explicitly granted per task.
+
+**Tool identifiers are adapter-owned.** Deterministically map the authorized
+execution permissions to supported runtime controls. A floor alone does not
+select the complete effective permission set. Missing or empty floors do not
+mean unrestricted inheritance. An explicit empty tool override means no tools,
+or must be rejected when the runtime cannot represent it; it must never silently
+fall back to inherited tools. Operator overrides remain subject to the same floor,
+ceiling, task authorization and runtime limits, even when justified.
+
+Static role generation can produce templates, but must not claim an authorized,
+restricted execution from a profile alone. Require an explicit authorized tool
+policy or task permission context before producing an executable configuration
+that could otherwise inherit broader tools. If dispatch-time controls are not
+implemented, report that boundary rather than inventing runtime enforcement.
+
+Tool names can span permission classes. For example, a general shell may write
+files or access the network; allowing it for `execute` does not prove those other
+effects are denied. Required isolation needs actual runtime enforcement or the
+task is blocked. Never claim sandbox enforcement from prompt instructions.
+
 `write_paths` are explicit workspace-relative files or directory prefixes
 (directory prefixes end in `/`), not shell globs. Empty means no writes. Include
 fixtures, logs and test output where needed; command execution can write files
@@ -139,6 +193,24 @@ instruction to send a message or automatically launch another task. The
 orchestrator resolves an actual recipient execution and checks authorization.
 
 ## Result and completion semantics
+
+Provenance may carry optional `delivered_skills`: `{ref, sha256, method}` per
+skill, where `method` is `preload` (the body was embedded in the instructions the
+adapter generated) or `reference` (the skill was named and left to be loaded).
+Four stages are distinguishable, and only the first three are representable:
+
+| Stage | Established by |
+| --- | --- |
+| declared by the role | the role's `skill_refs` |
+| resolved to a canonical file | reference resolution plus the digest |
+| delivered into the executing context | this field — the adapter's own claim |
+| relied upon during execution | **nothing; no field asserts it** |
+
+`reference` is deliberately the weaker claim of the two: it records that a skill
+was made available, not that it reached the context. That distinction is not
+pedantic — a child whose tool limit removes its skill-loading tool receives
+nothing at all under `reference`, which has been observed on a real runtime.
+Recording delivery is never evidence that the instructions were read or followed.
 
 Results identify the task, dispatch and attempt, mechanism, observed runtime/model and
 source provenance. Use `unverified` when a runtime identity is not observable;

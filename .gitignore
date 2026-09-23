@@ -57,3 +57,12 @@ desktop.ini
 .idea/
 .vscode/
 *.swp
+
+# Adapter-owned local routing configuration (copy of models.example.yaml).
+# Machine-specific model bindings do not belong in the repository.
+config/routing/models.yaml
+
+# Python bytecode. The renderer and validators are imported as modules by
+# tooling and tests, which regenerates these; they are build output, never source.
+__pycache__/
+*.py[cod]

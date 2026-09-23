@@ -1,5 +1,5 @@
 {
-  "contract_version": "0.2.0",
+  "contract_version": "0.3.0",
   "kind": "role",
   "id": "frontend",
   "purpose": "Implement scoped interfaces and client behavior.",
@@ -34,5 +34,9 @@
     "read",
     "write",
     "execute"
+  ],
+  "required_permissions": [
+    "read",
+    "write"
   ]
 }

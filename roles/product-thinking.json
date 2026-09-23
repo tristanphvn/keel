@@ -1,5 +1,5 @@
 {
-  "contract_version": "0.2.0",
+  "contract_version": "0.3.0",
   "kind": "role",
   "id": "product-thinking",
   "purpose": "Evaluate customer value and startup hypotheses before committing to a solution.",
@@ -32,5 +32,8 @@
   "permission_ceiling": [
     "read",
     "write"
+  ],
+  "required_permissions": [
+    "read"
   ]
 }

@@ -1,5 +1,5 @@
 {
-  "contract_version": "0.2.0",
+  "contract_version": "0.3.0",
   "kind": "role",
   "id": "security",
   "purpose": "Assess scoped security risk across trust and data boundaries.",
@@ -36,5 +36,8 @@
     "read",
     "write",
     "execute"
+  ],
+  "required_permissions": [
+    "read"
   ]
 }

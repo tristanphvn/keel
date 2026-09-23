@@ -1,5 +1,5 @@
 {
-  "contract_version": "0.2.0",
+  "contract_version": "0.3.0",
   "kind": "role",
   "id": "planning",
   "purpose": "Translate an accepted goal into scoped deliverables and dependencies.",
@@ -33,5 +33,8 @@
   "permission_ceiling": [
     "read",
     "write"
+  ],
+  "required_permissions": [
+    "read"
   ]
 }

@@ -1,5 +1,5 @@
 {
-  "contract_version": "0.2.0",
+  "contract_version": "0.3.0",
   "kind": "role",
   "id": "infrastructure-devops",
   "purpose": "Prepare reliable build, environment and operational changes.",
@@ -35,5 +35,8 @@
     "write",
     "execute",
     "network"
+  ],
+  "required_permissions": [
+    "read"
   ]
 }

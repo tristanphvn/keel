@@ -1,5 +1,5 @@
 {
-  "contract_version": "0.2.0",
+  "contract_version": "0.3.0",
   "kind": "role",
   "id": "review",
   "purpose": "Assess correctness and maintainability of another contributor\u2019s scoped change.",
@@ -36,5 +36,8 @@
     "read",
     "write",
     "execute"
+  ],
+  "required_permissions": [
+    "read"
   ]
 }
