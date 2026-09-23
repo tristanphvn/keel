@@ -8,10 +8,11 @@
 # the <domain>-<skill-name> convention. Migration is deliberate and not yet done.
 
 version: 1
-updated: 2026-09-17
+updated: 2026-09-21
 
 conventions:
-  skill_path: {{AGENT_HOME}}/skills/<skill-name>/SKILL.md
+  skill_path: >-
+    {{AGENT_HOME}}/skills/<skill-name>/SKILL.md
   naming: <domain>-<skill-name>
   domains: [core, review, eng, design, sec, data, ops]
   project_skill_path: <repository>/<agent-config-dir>/skills/
@@ -140,6 +141,98 @@ skills:
     version: 1
     notes: Removed from {{AGENT_HOME}}/skills on 2026-09-17. Backup at {{AGENT_HOME}}/backups/self-correction-regression-20260917/SKILL.md.
 
+  - id: core-orchestrate
+    domain: core
+    status: active
+    auto_trigger: true
+    purpose: Coordinate scoped work across role profiles when a task benefits from delegation, multiple disciplines, or independent verification. Use for task dispatch, handoffs, conflict resolution, and bounded agent workflows.
+    depends_on: []
+    rules: [VERIFY-003, SCOPE-001, SCOPE-003, TEST-001, CONSENSUS-002, CONSENSUS-004]
+    version: 1
+
+  - id: core-research-evidence
+    domain: core
+    status: active
+    auto_trigger: true
+    purpose: Gather and assess evidence for technical or product questions. Use for research, comparisons, uncertain claims, and investigations requiring source provenance.
+    depends_on: []
+    rules: [VERIFY-001, VERIFY-002, CODE-001, SCOPE-003, TEST-001]
+    version: 1
+
+  - id: core-product-discovery
+    domain: core
+    status: active
+    auto_trigger: true
+    purpose: Evaluate startup ideas, customer problems, value propositions, MVP boundaries and business hypotheses. Use for product thinking and deciding what to validate before building.
+    depends_on: []
+    rules: [VERIFY-001, VERIFY-002, REVIEW-004, SCOPE-001, SCOPE-003]
+    version: 1
+
+  - id: core-plan-work
+    domain: core
+    status: active
+    auto_trigger: true
+    purpose: Convert an accepted objective into bounded work with dependencies and measurable acceptance. Use for implementation plans, milestones, sequencing and replanning after verified blockers.
+    depends_on: []
+    rules: [SCOPE-001, REVIEW-003, REVIEW-004, VERIFY-001, TEST-001]
+    version: 1
+
+  - id: eng-design-architecture
+    domain: eng
+    status: active
+    auto_trigger: true
+    purpose: Design technical boundaries and evaluate implementation tradeoffs. Use for architecture decisions, API/data contracts, concurrency design and cross-component changes.
+    depends_on: []
+    rules: [CODE-001, CODE-002, ROOT-001, SCOPE-001, CONSENSUS-001]
+    version: 1
+
+  - id: eng-test-behavior
+    domain: eng
+    status: active
+    auto_trigger: true
+    purpose: Design and execute meaningful behavior checks against acceptance criteria. Use for regression tests, reproductions, integration verification and QA evidence.
+    depends_on: []
+    rules: [TEST-001, VERIFY-001, API-001, API-002, SCOPE-001, SCOPE-003]
+    version: 1
+
+  - id: sec-security-review
+    domain: sec
+    status: active
+    auto_trigger: true
+    purpose: Review authentication, authorization, trust boundaries, tenant isolation, secrets and sensitive data handling. Use for security reviews and threat modeling of scoped changes.
+    depends_on: []
+    rules: [CODE-002, VERIFY-002, TEST-001, SCOPE-003, CONSENSUS-001, CONSENSUS-002]
+    version: 1
+
+  - id: ops-release-readiness
+    domain: ops
+    status: active
+    auto_trigger: true
+    purpose: Assess build, environment, deployment and rollback readiness. Use for infrastructure changes, CI/CD design and operational handoff; execution still requires task authorization.
+    depends_on: []
+    rules: [VERIFY-001, API-002, SCOPE-001, SCOPE-003, TEST-001]
+    version: 1
+
+  - id: docs-evidence-handoff
+    domain: ops
+    status: active
+    auto_trigger: true
+    purpose: Write evidence-backed documentation and concise completion handoffs from actual work. Use for guides, decisions, task results and integration notes without requiring a project-specific template service.
+    depends_on: []
+    rules: [VERIFY-002, VERIFY-003, TEST-001, REVIEW-002, SCOPE-003]
+    version: 1
+
+  - id: core-english-work-coach
+    legacy_name: english-work-coach
+    domain: core
+    status: active
+    auto_trigger: false
+    purpose: Opt-in English lessons and work-prompt coaching with modality-aware assessment and separate learner progress.
+    depends_on: []
+    rules: [REVIEW-001, REVIEW-003, REVIEW-004]
+    version: 1
+    notes: Explicit activation or an established coaching session only; runtime copies derive from skills/english-work-coach.
+
 # Planned — architecture only, not yet authored. Do not create until requested.
 planned:
   - id: core-source-grounding
@@ -170,10 +263,6 @@ planned:
     domain: design
     status: draft
     purpose: AI-slop review pass and design-system conformance check on rendered UI.
-  - id: sec-security-review
-    domain: sec
-    status: draft
-    purpose: Auth, authorization, tenant isolation, and secret-handling review.
   - id: data-migration-safety
     domain: data
     status: draft

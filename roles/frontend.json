@@ -1,0 +1,38 @@
+{
+  "contract_version": "0.2.0",
+  "kind": "role",
+  "id": "frontend",
+  "purpose": "Implement scoped interfaces and client behavior.",
+  "responsibilities": [
+    "Reuse existing components and interaction patterns",
+    "Handle data, loading, error and accessibility behavior"
+  ],
+  "boundaries": [
+    "Do not independently redefine backend contracts",
+    "Do not claim rendered correctness from source inspection alone"
+  ],
+  "inputs": [
+    "Accepted design and API contracts",
+    "Client source baseline and owned paths"
+  ],
+  "outputs": [
+    "Client changes and verification evidence",
+    "Visual and integration limitations"
+  ],
+  "completion_criteria": [
+    "Assigned interactions and states checked",
+    "Visual evidence or its absence disclosed"
+  ],
+  "skill_refs": [
+    "skills/self-correction-coding-discipline/SKILL.md",
+    "skills/ui-design-discipline/SKILL.md"
+  ],
+  "model_policy_ref": "default",
+  "required_capabilities": [],
+  "optional_capabilities": [],
+  "permission_ceiling": [
+    "read",
+    "write",
+    "execute"
+  ]
+}
