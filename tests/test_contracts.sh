@@ -120,6 +120,51 @@ json.dump(d, open(p, 'w', encoding='utf-8'))" "$R"
 out="$($V --semantic --root "$R" 2>&1)"; rc=$?
 assert_eq "a floor inside the ceiling is accepted" 0 "$rc"
 
+# --- R1: the permission floor is enforced against the task --------------------
+# Reproduced before the fix: a testing task granting only `read` validated
+# cleanly even though the role cannot run anything without `execute`.
+reject below-floor "a task granting less than the role floor" "meet the role floor" gap
+
+for name in at-floor above-floor; do
+  out="$($V --semantic --task "$F/$name-task.json" --result "$F/$name-result.json" 2>&1)"; rc=$?
+  assert_eq "$name is accepted" 0 "$rc"
+done
+out="$($V --semantic --task "$F/above-floor-task.json" --result "$F/above-floor-result.json" 2>&1)"
+assert_contains "a grant above the floor and inside the ceiling is allowed" "$out" "permissions meet the role floor"
+
+# --- R2: required capabilities are the role-task union ------------------------
+# Reproduced before the fix: the task below was rejected because its role does
+# not name tool-isolation, though the contract specifies a union.
+out="$($V --semantic --task "$F/task-capability-task.json" --result "$F/task-capability-result.json" 2>&1)"; rc=$?
+assert_eq "a task may require a capability its role does not name" 0 "$rc"
+assert_contains "…and the effective set is reported as the union" "$out" "effective required capabilities: tool-isolation"
+
+# The vocabulary is still closed: an invented capability is rejected.
+python3 -c "
+import json, sys
+d = json.load(open(sys.argv[1], encoding='utf-8'))
+d['required_capabilities'] = ['teleportation']
+json.dump(d, open(sys.argv[2], 'w', encoding='utf-8'))" "$F/task-capability-task.json" "$F/unknown-cap-task.json"
+cp "$F/task-capability-result.json" "$F/unknown-cap-result.json"
+out="$($V --semantic --task "$F/unknown-cap-task.json" --result "$F/unknown-cap-result.json" 2>&1)"; rc=$?
+assert_ne "an unknown capability name is rejected" 0 "$rc"
+assert_contains "…by vocabulary check" "$out" "requires only known capabilities"
+
+# --- R3: the union is enforced against real evidence when a record is given ---
+MEASURED_REC="$REPO_ROOT/capabilities/records/claude-code-2.1.220-windows.json"
+out="$($V --semantic --task "$F/task-capability-task.json" --result "$F/task-capability-result.json"         --capabilities "$MEASURED_REC" 2>&1)"; rc=$?
+assert_eq "an evidenced capability satisfies the union" 0 "$rc"
+assert_contains "…citing the record" "$out" "is evidenced by the supplied record"
+
+python3 -c "
+import json, sys
+d = json.load(open(sys.argv[1], encoding='utf-8'))
+d['required_capabilities'] = ['workspace-isolation']
+json.dump(d, open(sys.argv[2], 'w', encoding='utf-8'))" "$F/task-capability-task.json" "$F/unmeasured-cap-task.json"
+cp "$F/task-capability-result.json" "$F/unmeasured-cap-result.json"
+out="$($V --semantic --task "$F/unmeasured-cap-task.json" --result "$F/unmeasured-cap-result.json"         --capabilities "$MEASURED_REC" 2>&1)"; rc=$?
+assert_ne "an unmeasured capability does not satisfy the union" 0 "$rc"
+
 # --- dependency graph ---------------------------------------------------------
 out="$($V --semantic --task "$F/cycle-a.json" --task "$F/cycle-b.json" 2>&1)"; rc=$?
 assert_ne "a dependency cycle is rejected" 0 "$rc"

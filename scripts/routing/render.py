@@ -9,7 +9,7 @@
 Source of truth
 ---------------
 `roles/catalog.json` and the `roles/<id>.json` profiles it references, against
-agent-work contract **0.2.0**. This renderer holds no second role source: it
+agent-work contract **0.3.0**. This renderer holds no second role source: it
 authors no purpose, no responsibility and no instruction text. Everything in a
 generated file is either copied from a canonical artifact or is adapter-owned
 routing configuration.
@@ -43,6 +43,7 @@ Exit codes: 0 ok · 1 collision or write failure · 2 contract/config error
 
 import argparse
 import hashlib
+import importlib.util
 import json
 import os
 import re
@@ -50,6 +51,9 @@ import subprocess
 import sys
 
 CONTRACT_VERSION = "0.3.0"
+# The contract's permission classes. Tool NAMES stay adapter-owned; these are
+# the runtime-independent classes the contract itself defines.
+PERMISSION_CLASSES = ["read", "write", "execute", "network", "delegate"]
 
 # --- YAML ---------------------------------------------------------------------
 # PyYAML when present; otherwise a parser for the restricted subset the routing
@@ -360,44 +364,200 @@ def role_options(cfg, rid, runtime):
     return entry, opts
 
 
-def effective_tools(role, cfg, opts, runtime):
-    """The tool allowlist for a role, and where it came from.
+def classes_for_tools(tool_map, tools):
+    """Which permission classes a tool list can satisfy, per the adapter's map.
 
-    Three outcomes, deliberately distinguishable in the generated file:
-
-      contract   derived from the role's `required_permissions` through the
-                 adapter's tool_map. Deterministic: same contract plus same map
-                 gives the same list on every machine.
-      adapter    an explicit `tools_override`, which the routing file must
-                 justify. Recorded as adapter-declared so nobody mistakes it for
-                 something the contract asked for.
-      none       the role declares no required_permissions and no override was
-                 given, so no restriction is emitted and the agent inherits.
-                 Less restrictive, and honestly attributed: the canonical model
-                 has not yet said what this role needs.
+    Used to check an operator override against the role's floor. A tool may span
+    classes — a shell can write files and reach the network — so this says which
+    classes are *covered*, never which effects are denied.
     """
-    override = opts.get("tools_override")
-    if override:
+    covered = set()
+    for cls, names in (tool_map or {}).items():
+        for name in names or []:
+            if name in tools:
+                covered.add(cls)
+    return covered
+
+
+def authorized_permissions(role, cfg, opts, entry):
+    """The explicitly authorized permission classes for this role, or None.
+
+    The floor is a minimum, not an authorization and not an allowlist: a review
+    role with a `read` floor may be authorized to write its report. So the
+    authorized set is supplied by the operator — per role, or as a default for
+    the run — and is then checked against floor and ceiling. Nothing is inferred
+    from the floor alone.
+    """
+    for source in (opts.get("permissions"), entry.get("permissions"),
+                   cfg.get("default_authorized_permissions")):
+        if source is not None:
+            return list(source)
+    return None
+
+
+def check_authorization(role, granted, floor, ceiling, tool_map, runtime):
+    """Validate an authorized permission set. Fatal on any violation.
+
+    One gate, used by every executable path. The override branch used to return
+    before reaching it, so an operator override could name tools carrying
+    permissions the role was never authorized for and never allowed to hold.
+    """
+    granted_set = set(granted)
+    unknown = sorted(granted_set - set(PERMISSION_CLASSES))
+    if unknown:
+        die(2, "role %s: unknown permission class(es) %s" % (role["id"], ", ".join(unknown)))
+
+    # floor <= authorized <= ceiling, the same inequality the contract states.
+    unmet = sorted(floor - granted_set)
+    if unmet:
+        die(2, "role %s: the authorized permissions %s do not meet its floor; %s missing. "
+               "A role cannot discharge its responsibility below its floor - grant them "
+               "or do not dispatch this role."
+               % (role["id"], ", ".join(sorted(granted_set)) or "(none)", ", ".join(unmet)))
+    excess = sorted(granted_set - ceiling)
+    if excess:
+        die(2, "role %s: the authorized permissions exceed its ceiling by %s. The ceiling "
+               "is a bound on what the role may ever be granted."
+               % (role["id"], ", ".join(excess)))
+
+    if not tool_map:
+        die(2, "role %s: the %s tool_map is empty, so no authorized permission can be "
+               "mapped to a tool and no tool can be checked against the authorization. "
+               "Declare the map, or leave the role unauthorized."
+               % (role["id"], runtime))
+    return granted_set
+
+
+def check_tool_selection(role, tools, granted_set, tool_map, runtime, origin):
+    """Validate a selected tool list against the authorization. Fatal on violation.
+
+    One gate, used by both executable paths. A tool NAME may appear under several
+    permission classes, so selecting it for one authorized class selects every
+    class it declares. The derived path used to skip this check entirely: it
+    walked the authorized classes and collected their tool names without ever
+    asking what else those names are mapped to, so a name shared between an
+    authorized and an unauthorized class was emitted as though it carried only
+    the authorized one — outside the authorization, and with it the ceiling.
+
+    Same limit as everywhere else this map is consulted: it constrains declared
+    tool names before anything is written. It does not confine what a tool does
+    once it runs.
+    """
+    unmapped = [t for t in tools if not classes_for_tools(tool_map, [t])]
+    if unmapped:
+        die(2, "role %s: %s names %s, which the %s tool_map does not describe, so "
+               "which permission class(es) they carry is unknown. An unmapped tool "
+               "cannot be checked against the authorization."
+               % (role["id"], origin, ", ".join(sorted(unmapped)), runtime))
+
+    violations = []
+    for tool in tools:
+        outside = sorted(classes_for_tools(tool_map, [tool]) - granted_set)
+        if outside:
+            violations.append("%s carries %s" % (tool, ", ".join(outside)))
+    if violations:
+        die(2, "role %s: %s reaches outside its authorized permissions [%s]: %s. The "
+               "authorization and the ceiling bound a derived tool list and an override "
+               "alike, justified or not: a tool name mapped to an unauthorized class "
+               "carries that class whichever path selected it."
+               % (role["id"], origin, ",".join(sorted(granted_set)), "; ".join(violations)))
+
+
+def effective_tools(role, cfg, rid, runtime):
+    """(tools, origin, note) for a role.
+
+    tools is None only for a template: a configuration that is deliberately not
+    executable and is not installed where a runtime would discover it.
+
+    Origins, all distinguishable in the generated file:
+
+      authorized  derived from an explicit authorized permission set through the
+                  adapter's tool_map. floor - authorized - ceiling, checked.
+      adapter     an explicit tools_override, which still requires authorization
+                  and is checked tool by tool against it. A justification records
+                  why an operator narrowed the set; it exempts nothing.
+      template    no authorization context was supplied, so no executable
+                  configuration is produced.
+
+    What the mapping does and does not establish: it says which permission
+    classes a tool NAME is declared to carry, so a tool outside the authorized
+    classes can be refused before anything is written. It does not confine what
+    a tool does once it runs. A general-purpose shell authorized for `execute`
+    can still write files and reach the network; only the runtime can prevent
+    that, and whether it does is a capability question answered by evidence, not
+    by this table.
+    """
+    entry, opts = role_options(cfg, rid, runtime)
+    floor = set(role.get("required_permissions") or [])
+    ceiling = set(role.get("permission_ceiling") or [])
+    tool_map = (cfg.get("tool_map") or {}).get(runtime) or {}
+
+    if "tools_override" in opts:
+        override = opts.get("tools_override")
+        if not isinstance(override, list):
+            die(2, "role %s: tools_override must be a list (use [] for no tools)" % role["id"])
+        if not override:
+            # An empty allowlist must mean no tools. Whether this runtime
+            # represents that is unmeasured here, so the renderer refuses rather
+            # than emitting something whose meaning it cannot state.
+            die(2, "role %s: tools_override is explicitly empty, which means NO tools. "
+                   "Whether %s represents an empty tool list as 'no tools' rather than "
+                   "'unrestricted' has not been measured in this repository, so the "
+                   "renderer will not emit it. Measure it and record the evidence, or "
+                   "remove the override. It is never treated as inherited tools."
+                   % (role["id"], runtime))
+
+        # An override is an executable configuration, so it needs the same
+        # authorization as any other - a justification is a record of an operator
+        # decision, not a substitute for being allowed to make it.
+        granted = authorized_permissions(role, cfg, opts, entry)
+        if granted is None:
+            die(2, "role %s: tools_override produces an executable configuration, so it "
+                   "requires an explicit authorized permission set. A justification "
+                   "records why an operator narrowed the tools; it does not authorize "
+                   "the role. Add `permissions:` or remove the override."
+                   % role["id"])
+        granted_set = check_authorization(role, granted, floor, ceiling, tool_map, runtime)
+
+        # Every overridden tool must be known to the map, and must not carry a
+        # permission class outside the authorization (hence outside the ceiling).
+        check_tool_selection(role, override, granted_set, tool_map, runtime,
+                             "tools_override")
+
+        covered = classes_for_tools(tool_map, override)
+        unmet = sorted(floor - covered)
+        if unmet:
+            die(2, "role %s: tools_override does not cover its required permission "
+                   "class(es) %s. An override is subject to the same floor as anything "
+                   "else, justified or not."
+                   % (role["id"], ", ".join(unmet)))
         return list(override), "adapter", opts.get("justification", "")
 
-    needed = role.get("required_permissions") or []
-    if not needed:
-        return None, "none", ""
+    granted = authorized_permissions(role, cfg, opts, entry)
+    if granted is None:
+        return None, "template", ""
 
-    tool_map = (cfg.get("tool_map") or {}).get(runtime) or {}
-    missing = [c for c in needed if not tool_map.get(c)]
+    granted_set = check_authorization(role, granted, floor, ceiling, tool_map, runtime)
+
+    missing = [c for c in sorted(granted_set) if not tool_map.get(c)]
     if missing:
-        die(2, "role %s requires permission class(es) %s, which the %s tool_map does "
-               "not map to any tool. An unmapped class is a configuration error; the "
-               "renderer will not silently drop a capability the role needs."
+        die(2, "role %s is authorized for permission class(es) %s, which the %s tool_map "
+               "does not map to any tool. An unmapped class is a configuration error; the "
+               "renderer will not silently drop an authorized permission."
                % (role["id"], ", ".join(missing), runtime))
 
     tools = []
-    for cls in needed:
+    for cls in granted:
         for name in tool_map[cls]:
             if name not in tools:
                 tools.append(name)
-    return tools, "contract", ""
+
+    # Derivation selects names, not classes. A name reached through an authorized
+    # class can also be mapped to an unauthorized one, so the selected list goes
+    # through the same gate an override does.
+    check_tool_selection(role, tools, granted_set, tool_map, runtime,
+                         "the tool list derived from its authorized permissions")
+    return tools, "authorized", ",".join(sorted(granted_set))
 
 
 # --- instruction body ---------------------------------------------------------
@@ -462,14 +622,16 @@ def load_skill_bodies(role):
     return out
 
 
-def describe_tool_origin(origin, justification):
+def describe_tool_origin(origin, note):
     """Say where a tool limit came from, so adapter policy is never mistaken for
-    something the contract required."""
-    if origin == "contract":
-        return "derived from the role's required_permissions"
+    something the contract required, and an unauthorized template is never
+    mistaken for a restricted execution."""
+    if origin == "authorized":
+        return "derived from the authorized permissions [%s]" % note
     if origin == "adapter":
-        return "ADAPTER-DECLARED override - %s" % (justification or "no justification given")
-    return "none (role declares no required_permissions; the agent inherits)"
+        return "ADAPTER-DECLARED override - %s" % (note or "no justification given")
+    return ("NONE - no authorized permission set was supplied, so this file is a "
+            "template and carries no tool limit")
 
 
 def decide_delivery(role, entry, tools, runtime):
@@ -500,7 +662,7 @@ def render_claude(role, catalog, cfg, revision):
     entry, opts = role_options(cfg, role["id"], "claude")
     policy = role["model_policy_ref"]
     model = cfg["policies"][policy]["claude"]["model"]
-    tools, origin, justification = effective_tools(role, cfg, opts, "claude")
+    tools, origin, justification = effective_tools(role, cfg, role["id"], "claude")
     delivery, why = decide_delivery(role, entry, tools, "claude")
     skills_inline = load_skill_bodies(role) if delivery == "preload" else []
 
@@ -518,6 +680,11 @@ def render_claude(role, catalog, cfg, revision):
     head.append("<!-- model policy: %s -> %s · skill delivery: %s (%s) -->" %
                 (policy, model, delivery, why))
     head.append("<!-- tool limit: %s -->" % describe_tool_origin(origin, justification))
+    if origin == "template":
+        head.append("<!-- NON-EXECUTABLE TEMPLATE: no authorized permission set was supplied, "
+                    "so this agent has no tool limit and would inherit the parent's tools. "
+                    "Do not dispatch it. Supply authorized permissions to render an "
+                    "executable configuration. -->")
     head.append("")
     return "\n".join(head) + "\n" + execution_instructions(
         role, catalog, delivery, skills_inline, "")
@@ -531,7 +698,7 @@ def render_codex(role, catalog, cfg, revision):
     entry, opts = role_options(cfg, role["id"], "codex")
     policy = role["model_policy_ref"]
     binding = cfg["policies"][policy]["codex"]
-    tools, origin, justification = effective_tools(role, cfg, opts, "codex")
+    tools, origin, justification = effective_tools(role, cfg, role["id"], "codex")
     delivery, why = decide_delivery(role, entry, tools, "codex")
     skills_inline = load_skill_bodies(role) if delivery == "preload" else []
 
@@ -541,6 +708,11 @@ def render_codex(role, catalog, cfg, revision):
         "# source: %s · contract %s · revision %s" % (role["_ref"], CONTRACT_VERSION, revision),
         "# model policy: %s · skill delivery: %s (%s)" % (policy, delivery, why),
         "# tool limit: %s" % describe_tool_origin(origin, justification),
+    ]
+    if origin == "template":
+        out.append("# NON-EXECUTABLE TEMPLATE: no authorized permission set was supplied, so")
+        out.append("# this agent carries no tool limit and would inherit. Do not dispatch it.")
+    out += [
         "name = %s" % toml_str(role["id"]),
         "description = %s" % toml_str(role["purpose"].replace("\n", " ")),
         "model = %s" % toml_str(binding["model"]),
@@ -567,18 +739,42 @@ RENDERERS = {"claude": (".md", render_claude), "codex": (".toml", render_codex)}
 RUNTIME_FAMILY = {"claude": "claude-code", "codex": "codex"}
 
 
+def canonical_capability_validator(repo_root):
+    """Import the canonical capability validator, so this path cannot drift."""
+    path = os.path.join(repo_root, "scripts", "capabilities", "validate.py")
+    spec = importlib.util.spec_from_file_location("agent_skills_capability_validate", path)
+    if spec is None or spec.loader is None:
+        die(2, "cannot load the canonical capability validator at %s" % path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
 def load_capability_record(path, repo_root):
+    """Load a record only after it passes canonical validation.
+
+    A label is not evidence. Before this, the renderer read `state: enforced` and
+    believed it — a record with its evidence array emptied still authorised a
+    role that required enforcement. The record now goes through the same schema
+    and semantic checks the capability validator applies, including evidence
+    presence and kind, probe containment, existence and digest.
+
+    Validation is not measurement: passing here says the record is well-formed
+    and internally consistent, not that the runtime still behaves that way.
+    """
     rec = load_json_file(path)
-    if rec.get("record_version") != 1:
-        die(2, "%s: record_version %r is not supported; this renderer implements 1 exactly"
+    if rec.get("record_version") != 2:
+        die(2, "%s: record_version %r is not supported; this renderer implements 2 exactly"
                % (path, rec.get("record_version")))
-    if rec.get("kind") != "runtime-capability-record":
-        die(2, "%s: kind %r, expected 'runtime-capability-record'" % (path, rec.get("kind")))
-    for key in ("status", "runtime", "platform", "capabilities"):
-        if key not in rec:
-            die(2, "%s: capability record is missing %r" % (path, key))
-    if rec["status"] not in ("measured", "example"):
-        die(2, "%s: status %r is not recognised" % (path, rec["status"]))
+
+    validator = canonical_capability_validator(repo_root)
+    ok, problems = validator.validate_record_file(repo_root, path)
+    if not ok:
+        for problem in problems[:8]:
+            sys.stderr.write("  invalid record: %s\n" % problem)
+        die(2, "%s did not pass canonical capability validation, so it authorises nothing. "
+               "Nothing was written." % path)
+
     rec["_path"] = path
     rec["_requirements"] = evidence_requirements(repo_root)
     return rec
@@ -643,12 +839,25 @@ def check_capabilities(roles, record, runtime, version, platform):
     """
     failures = []
 
+    needs_evidence = any(role.get("required_capabilities") for role in roles)
+
     if record is not None:
         family = RUNTIME_FAMILY[runtime]
         if record["runtime"].get("family") != family:
             die(2, "%s: record is for runtime family %r, but rendering %r. A record proves "
                    "nothing about another runtime."
                    % (record["_path"], record["runtime"].get("family"), family))
+
+        # An optional match flag cannot establish compatibility with a target
+        # nobody named. When a record is what permits an evidence-dependent
+        # render, the target it is being matched against has to be stated.
+        if needs_evidence and (version is None or platform is None):
+            die(2, "a role requires a capability, so the target runtime must be identified: "
+                   "pass --runtime-version and --platform. %s measures %s %s on %s; without a "
+                   "stated target there is nothing to compare it against."
+                   % (record["_path"], record["runtime"].get("family"),
+                      record["runtime"].get("version"), record["platform"].get("os")))
+
         if version is not None and record["runtime"].get("version") != version:
             die(2, "%s: record measures version %r, but --runtime-version says %r. A "
                    "measurement of one version does not carry to another."
@@ -667,6 +876,45 @@ def check_capabilities(roles, record, runtime, version, platform):
     return failures
 
 
+# --- where a rendered role is stored -----------------------------------------
+# Both runtimes auto-discover agent definitions in <config>/agents. A template is
+# not an authorized configuration, so it must not live there: a comment saying
+# NON-EXECUTABLE does not stop a runtime from listing and dispatching the file.
+# Templates go under .agent-skills/templates/<runtime>/, which neither runtime
+# scans, and which already holds this adapter's own bookkeeping.
+
+TEMPLATE_DIRNAME = os.path.join(".agent-skills", "templates")
+
+
+def active_dir(target):
+    return os.path.join(target, "agents")
+
+
+def template_dir(target, runtime):
+    return os.path.join(target, TEMPLATE_DIRNAME, runtime)
+
+
+def output_paths(target, runtime, rid, ext, executable):
+    """(where this role belongs, where it must NOT be) for this render."""
+    active = os.path.join(active_dir(target), rid + ext)
+    template = os.path.join(template_dir(target, runtime), rid + ext)
+    return (active, template) if executable else (template, active)
+
+
+TEMPLATE_README = """# Non-executable role templates
+
+Rendered from canonical role profiles that carry no authorized permission set.
+
+They are kept here, and deliberately not in `agents/`, because a runtime
+discovers and dispatches whatever it finds in its agents directory. A comment
+inside a file does not prevent that; a different directory does.
+
+To make a role executable, authorize it in the routing configuration and
+re-render. The renderer then writes it to `agents/` and removes the template it
+owns here. Nothing in this directory is loaded by any runtime.
+"""
+
+
 def delivery_record(roles, cfg, runtime, revision):
     """What this render delivered, per role, for a result's `delivered_skills`.
 
@@ -681,12 +929,18 @@ def delivery_record(roles, cfg, runtime, revision):
            "profile_revision": revision, "roles": {}}
     for role in roles:
         entry, opts = role_options(cfg, role["id"], runtime)
-        tools, _origin, _just = effective_tools(role, cfg, opts, runtime)
+        tools, _origin, _just = effective_tools(role, cfg, role["id"], runtime)
         delivery, _why = decide_delivery(role, entry, tools, runtime)
-        out["roles"][role["id"]] = [
-            {"ref": s["ref"], "sha256": s["sha256"], "method": delivery}
-            for s in role["_skills"]
-        ]
+        out["roles"][role["id"]] = {
+            # An unauthorized role is rendered as a template and is not installed
+            # where the runtime looks, so a consumer of this record can tell what
+            # was actually made dispatchable.
+            "executable": tools is not None,
+            "skills": [
+                {"ref": s["ref"], "sha256": s["sha256"], "method": delivery}
+                for s in role["_skills"]
+            ],
+        }
     return json.dumps(out, indent=2, sort_keys=True) + "\n"
 
 # Codex reads the instruction chain up to project_doc_max_bytes (32 KiB default).
@@ -716,6 +970,24 @@ def read_manifest(target):
 def write_manifest(target, entries):
     write_text(manifest_path(target),
                "".join("%s\t%s\n" % (p, h) for p, h in sorted(entries.items())))
+
+
+def ownership_conflict(path, owned):
+    """Why this file may not be replaced or removed, or None if it may be.
+
+    One ownership test for every file a render touches. A path this renderer
+    never recorded belongs to someone else. A recorded path whose bytes no longer
+    match the digest it was written with carries an edit made since. Neither is a
+    build output this run is free to discard, and the difference between them is
+    worth reporting, so the caller gets the reason rather than a bare boolean.
+    """
+    if not os.path.exists(path):
+        return None
+    if path not in owned:
+        return "not written by this renderer"
+    if sha256_file(path) != owned[path]:
+        return "modified since it was rendered"
+    return None
 
 
 # --- main ---------------------------------------------------------------------
@@ -754,7 +1026,9 @@ def main(argv):
     mode = "check" if args.check else ("remove" if args.remove else "render")
     print("runtime:  %s" % args.runtime)
     print("root:     %s" % root)
-    print("target:   %s" % outdir)
+    print("target:   %s" % active_dir(target))
+    print("templates: %s  (unauthorized roles; not installed)"
+          % template_dir(target, args.runtime))
     print("mode:     %s%s" % (mode, "" if args.check else (" (apply)" if args.apply else " (dry run)")))
     print("")
 
@@ -807,8 +1081,11 @@ def main(argv):
                "measured record, or measure the capability." % len(set(f[0] for f in cap_failures)))
 
     rendered = {}
+    executable = {}
     oversize = []
     for role in roles:
+        _tools, _origin, _note = effective_tools(role, cfg, role["id"], args.runtime)
+        executable[role["id"]] = _tools is not None
         content = renderer(role, catalog, cfg, revision)
         size = len(content.encode("utf-8"))
         if budget and size > budget:
@@ -826,28 +1103,107 @@ def main(argv):
     if args.check:
         problems = 0
         for rid, content in sorted(rendered.items()):
-            path = os.path.join(outdir, rid + ext)
+            path, other = output_paths(target, args.runtime, rid, ext, executable[rid])
             if not os.path.isfile(path):
                 print("  FAIL  %s not rendered" % path); problems += 1; continue
             if read_text(path) != content:
                 print("  FAIL  %s is stale" % path); problems += 1; continue
             if path not in owned:
                 print("  FAIL  %s is not in the routing manifest" % path); problems += 1; continue
-            print("  ok    %s" % path)
+            # A leftover at the other location is the dangerous case: an
+            # unauthorized role whose old executable copy is still discoverable.
+            if os.path.exists(other):
+                where = "still discoverable at" if not executable[rid] else "shadowed by a template at"
+                print("  FAIL  %s is %s %s" % (rid, where, other)); problems += 1; continue
+            print("  ok    %s%s" % (path, "" if executable[rid] else "  (template, not installed)"))
         print("\nROUTING CHECK: %s" % ("PASS" if problems == 0 else "FAIL (%d)" % problems))
         return 0 if problems == 0 else 1
 
     # --- render ---------------------------------------------------------------
-    collisions = written = unchanged = 0
-    entries = dict(owned)
+    # Everything this run would generate, named before anything is touched. The
+    # auxiliary files are build outputs exactly like an agent file is, so they
+    # are ownership-checked the same way: knowing a path is not a licence to
+    # overwrite whatever is sitting at it.
+    aux_outputs = []  # (path, content, tag, what it is)
+    if any(not executable[r["id"]] for r in roles):
+        aux_outputs.append((os.path.join(template_dir(target, args.runtime), "README.md"),
+                            TEMPLATE_README, "readme  ", "templates README"))
+    aux_outputs.append((os.path.join(target, ".agent-skills",
+                                     "delivered-skills-%s.json" % args.runtime),
+                        delivery_record(roles, cfg, args.runtime, revision),
+                        "record  ", "delivery record"))
+
+    # --- preflight, before a single byte is written --------------------------
+    # Two questions per role, both answered before any mutation:
+    #
+    #   destination      may this run replace what is already at the path it is
+    #                    about to write?
+    #   migration source may it remove the copy at the other location, so a role
+    #                    that changed side leaves nothing discoverable behind?
+    #
+    # Only the second was asked. The write loop then overwrote a destination it
+    # owned without ever comparing the file against the digest it had recorded,
+    # so an edit made to a rendered agent since the last run was silently lost.
+    #
+    # A conflict anywhere refuses the whole run. Writing the roles that happen to
+    # be clean would leave the target half-migrated, with a manifest and a
+    # delivery record describing a delivery that did not take place.
+    conflicts = []
+    migrations = []
     for role in roles:
         rid = role["id"]
-        path = os.path.join(outdir, rid + ext)
+        path, other = output_paths(target, args.runtime, rid, ext, executable[rid])
+
+        why = ownership_conflict(path, owned)
+        if why:
+            conflicts.append(("destination", rid, path, why))
+
+        if os.path.exists(other):
+            why = ownership_conflict(other, owned)
+            if why:
+                conflicts.append(("stale", rid, other, why))
+            else:
+                migrations.append((rid, other,
+                                   "deactivate" if not executable[rid] else "promote"))
+
+    for path, _content, _tag, what in aux_outputs:
+        why = ownership_conflict(path, owned)
+        if why:
+            conflicts.append(("destination", what, path, why))
+
+    if conflicts:
+        stale = [c for c in conflicts if c[0] == "stale"]
+        for _, rid, path, why in stale:
+            sys.stderr.write("  CONFLICT role %s: %s exists and is %s\n" % (rid, path, why))
+        if stale:
+            sys.stderr.write(
+                "  These files were NOT removed and the role was NOT deactivated. An\n"
+                "  unauthorized role whose executable definition is still in place stays\n"
+                "  discoverable by the runtime. Resolve each file, then re-run.\n")
+        for kind, who, path, why in conflicts:
+            if kind == "stale":
+                continue
+            sys.stderr.write("  COLLISION %s (%s) exists and is %s — not overwriting\n"
+                             % (path, who, why))
+        die(1, "%d file(s) could not be safely written or removed, so nothing was: no "
+               "file written, none removed, and no manifest or delivery record updated. "
+               "Every file above is exactly as it was found. Resolve each one, then "
+               "re-run." % len(conflicts))
+
+    written = unchanged = 0
+    entries = dict(owned)
+
+    for rid, old_path, direction in migrations:
+        verb = "DEACTIVATE" if direction == "deactivate" else "PROMOTE   "
+        print("  %s %s (removing %s)" % (verb, rid, old_path))
+        if args.apply:
+            os.remove(old_path)
+            entries.pop(old_path, None)
+
+    for role in roles:
+        rid = role["id"]
+        path, _other = output_paths(target, args.runtime, rid, ext, executable[rid])
         content = rendered[rid]
-        if os.path.exists(path) and path not in owned:
-            print("  COLLISION %s exists and is not ours — not overwriting" % path)
-            collisions += 1
-            continue
         if os.path.exists(path) and read_text(path) == content:
             print("  ok        %s (unchanged)" % path)
             unchanged += 1
@@ -855,31 +1211,32 @@ def main(argv):
             continue
         policy = role["model_policy_ref"]
         model = cfg["policies"][policy][args.runtime]["model"]
-        print("  %s %s  policy=%s model=%s %dB" % (
+        print("  %s %s  policy=%s model=%s %dB %s" % (
             "WRITE   " if not os.path.exists(path) else "UPDATE  ",
-            rid + ext, policy, model, len(content.encode("utf-8"))))
+            rid + ext, policy, model, len(content.encode("utf-8")),
+            "-> agents/" if executable[rid] else "-> template (not installed)"))
         written += 1
         if args.apply:
             write_text(path, content)
             entries[path] = sha256_file(path)
 
-    # The delivery record is written only when the render itself succeeded: a
-    # record of what was delivered must never outlive a run that delivered
-    # nothing.
-    if args.apply and not collisions:
-        record_path = os.path.join(target, ".agent-skills",
-                                   "delivered-skills-%s.json" % args.runtime)
-        write_text(record_path, delivery_record(roles, cfg, args.runtime, revision))
-        entries[record_path] = sha256_file(record_path)
-        print("  record    %s" % record_path)
+    # The auxiliary outputs follow the roles, and only here: a record of what was
+    # delivered must never outlive a run that delivered nothing. The preflight
+    # has already cleared each path, so a modified README or delivery record
+    # refused the run above rather than being overwritten at this point.
+    for path, content, tag, _what in aux_outputs:
+        if os.path.exists(path) and read_text(path) == content:
+            entries[path] = sha256_file(path)
+            continue
+        print("  %s  %s" % (tag, path))
+        if args.apply:
+            write_text(path, content)
+            entries[path] = sha256_file(path)
 
     if args.apply:
         write_manifest(target, entries)
 
-    print("\n%d written, %d unchanged, %d collision(s)." % (written, unchanged, collisions))
-    if collisions:
-        sys.stderr.write("Nothing was overwritten. Move or delete the colliding file(s) first.\n")
-        return 1
+    print("\n%d written, %d unchanged, 0 collision(s)." % (written, unchanged))
     if not args.apply:
         print("Nothing written. Re-run with --apply.")
     return 0

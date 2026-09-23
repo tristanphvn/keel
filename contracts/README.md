@@ -97,22 +97,41 @@ and `delegate`. A role's `permission_ceiling` is an upper bound, not a grant.
 Task permissions must be a subset of that ceiling and intersect with platform
 restrictions and actual user authorization. Capability flags also grant nothing.
 
-A role may also declare optional `required_permissions`: the classes without
-which it cannot discharge its responsibilities. Where `permission_ceiling` is the
-upper bound, this is the floor, and it must be a subset of the ceiling. It exists
-so that least privilege has something to be computed from: an adapter that has to
-choose a tool limit with only a ceiling available will either grant everything or
-invent a restriction, and an invented restriction is behavioural — a role denied
-an execute tool reports `blocked` rather than doing its work.
+A role may declare optional `required_permissions`: the minimum classes necessary
+for its core responsibility. This floor must be a subset of the ceiling. It is
+an eligibility condition, never an authorization or a complete tool allowlist.
+For each task, check both inequalities:
 
-**Tool identifiers are adapter-owned.** The contract names permission classes and
-never tool names, because the names are runtime-specific. An adapter maps classes
-onto its own tools and must do so deterministically: the same profile and the
-same mapping produce the same limit on every machine. An adapter may still apply
-a limit the contract did not ask for — operators have legitimate reasons — but it
-must be recorded as adapter-declared rather than presented as a contract
-requirement. A role that declares no `required_permissions` has not yet stated
-what it needs, and the honest rendering is no restriction at all.
+`role.required_permissions ⊆ task.permissions ⊆ role.permission_ceiling`.
+
+Apply user authorization and runtime restrictions too; if the remaining effective
+permissions cannot meet the floor or task acceptance, report the task blocked.
+Task-specific operations may need permissions above the role floor: a review
+report saved to disk needs `write`, while a conversational review does not;
+Research may use supplied sources without network access; Orchestrator may work
+directly without `delegate`. Backend/Frontend require `read, write` for their
+implementation responsibility; Testing requires `read, execute` for behavioral
+execution; all other initial profiles have a `read` floor. Extra checks, artifact
+writes, external retrieval and delegation must be explicitly granted per task.
+
+**Tool identifiers are adapter-owned.** Deterministically map the authorized
+execution permissions to supported runtime controls. A floor alone does not
+select the complete effective permission set. Missing or empty floors do not
+mean unrestricted inheritance. An explicit empty tool override means no tools,
+or must be rejected when the runtime cannot represent it; it must never silently
+fall back to inherited tools. Operator overrides remain subject to the same floor,
+ceiling, task authorization and runtime limits, even when justified.
+
+Static role generation can produce templates, but must not claim an authorized,
+restricted execution from a profile alone. Require an explicit authorized tool
+policy or task permission context before producing an executable configuration
+that could otherwise inherit broader tools. If dispatch-time controls are not
+implemented, report that boundary rather than inventing runtime enforcement.
+
+Tool names can span permission classes. For example, a general shell may write
+files or access the network; allowing it for `execute` does not prove those other
+effects are denied. Required isolation needs actual runtime enforcement or the
+task is blocked. Never claim sandbox enforcement from prompt instructions.
 
 `write_paths` are explicit workspace-relative files or directory prefixes
 (directory prefixes end in `/`), not shell globs. Empty means no writes. Include

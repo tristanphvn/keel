@@ -1,5 +1,5 @@
 {
-  "record_version": 1,
+  "record_version": 2,
   "kind": "runtime-capability-record",
   "status": "example",
   "runtime": {
@@ -8,7 +8,7 @@
   },
   "platform": {
     "os": "linux",
-    "detail": "placeholder — no Codex measurement has been taken on any platform"
+    "detail": "placeholder \u2014 no Codex measurement has been taken on any platform"
   },
   "measured_at": "2026-09-21",
   "capabilities": {

@@ -62,6 +62,46 @@ if command -v python3 >/dev/null 2>&1; then
   assert_contains "…for the whole canonical set" "$out" "14 role(s)"
 fi
 
+# --- an installed file the user edited is not overwritten ---------------------
+# The manifest records the hash of every file written, and the uninstaller
+# already refuses to delete a file whose hash has moved (KEPT (modified since
+# install)). The installer did not apply the same test: it compared the
+# destination against the rendered source and overwrote on any difference, so a
+# customized skill was replaced and the run still exited 0. The hash was written
+# every run and then loaded with `cut -f1`, discarding it.
+HE="$(sandbox_new)"
+AGENT_HOME="$HE" $INSTALL --apply >/dev/null 2>&1
+EDITED="$HE/skills/review-code/SKILL.md"
+assert_file_exists "a skill is installed to edit" "$EDITED"
+printf '\n## Local customization\n\nteam-specific checklist\n' >> "$EDITED"
+edited_sum="$(sha256sum < "$EDITED")"
+fp="$(tree_fingerprint "$HE")"
+
+out="$(AGENT_HOME="$HE" $INSTALL --apply 2>&1)"; rc=$?
+assert_ne "an edited installed file blocks the install" 0 "$rc"
+assert_contains "…reported as a conflict"    "$out" "CONFLICT (edited since installed"
+assert_contains "…naming the file"           "$out" "review-code"
+assert_contains "…and saying nothing was written" "$out" "Nothing was written"
+assert_eq "…the edit survives byte for byte" "$edited_sum" "$(sha256sum < "$EDITED")"
+# The preflight runs before the backup, so a refused run leaves no new backup
+# directory and no manifest rewrite behind.
+assert_eq "…and the destination is untouched entirely" "$fp" "$(tree_fingerprint "$HE")"
+
+# A dry run reports the same conflict rather than promising a clean apply.
+out="$(AGENT_HOME="$HE" $INSTALL 2>&1)"; rc=$?
+assert_ne "a dry run reports it too" 0 "$rc"
+assert_contains "…as the same conflict" "$out" "CONFLICT (edited since installed"
+
+# Restoring the file clears the conflict: the check is about the content, not a
+# permanent mark against the path.
+AGENT_HOME="$HE" $UNINSTALL --apply >/dev/null 2>&1
+rm -rf "$HE/skills" "$HE/rules" "$HE/.agent-skills"
+out="$(AGENT_HOME="$HE" $INSTALL --apply 2>&1)"; rc=$?
+assert_eq "a clean destination installs again" 0 "$rc"
+out="$(AGENT_HOME="$HE" $INSTALL --apply 2>&1)"; rc=$?
+assert_eq "…and an unedited re-install is not a false positive" 0 "$rc"
+assert_not_contains "…with no conflict reported" "$out" "CONFLICT"
+
 # --- repeat installation is predictable --------------------------------------
 fp1="$(tree_fingerprint "$H")"
 out="$(AGENT_HOME="$H" $INSTALL --apply 2>&1)"

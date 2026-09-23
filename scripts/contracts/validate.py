@@ -31,6 +31,21 @@ import sys
 CONTRACT_VERSION = "0.3.0"
 BAD_REF = re.compile(r"^(/|[A-Za-z]:)|(^|/)\.\.(/|$)|\\")
 
+# The capability names the contract defines. A task may require any of them; a
+# role's optional_capabilities is not a ceiling on what a task can ask for.
+CAPABILITY_VOCABULARY = ["spawn", "model-selection", "tool-isolation",
+                         "workspace-isolation", "fresh-context"]
+
+
+def capability_gate(root):
+    """The canonical capability verdict logic, imported rather than restated."""
+    import importlib.util
+    path = os.path.join(root, "scripts", "routing", "render.py")
+    spec = importlib.util.spec_from_file_location("agent_skills_render", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
 
 def read_json(path):
     with open(path, "rb") as fh:
@@ -176,16 +191,32 @@ def semantic_task(task, roles, catalog, rep, task_graph=None):
               "duplicates: %s" % sorted(i for i in set(crit_ids) if crit_ids.count(i) > 1))
     rep.check("task %s has at least one acceptance criterion" % tid, bool(crit_ids))
 
-    # Permissions are bounded by the role ceiling; a ceiling grants nothing.
+    # The contract's inequality, both halves:
+    #     role.required_permissions ⊆ task.permissions ⊆ role.permission_ceiling
+    # Only the upper half was checked before, so a task could grant less than the
+    # role needs to do its job and still validate.
     if role:
         ceiling = set(role.get("permission_ceiling", []))
+        floor = set(role.get("required_permissions", []))
         asked = set(task.get("permissions", []))
         rep.check("task %s permissions are within the role ceiling" % tid,
                   asked <= ceiling, "excess: %s" % sorted(asked - ceiling))
-        req = set(task.get("required_capabilities", []))
-        unknown = req - set(role.get("required_capabilities", [])) - set(role.get("optional_capabilities", []))
-        rep.check("task %s requires no capability the role does not name" % tid,
-                  not unknown, "extra: %s" % sorted(unknown))
+        rep.check("task %s permissions meet the role floor" % tid,
+                  floor <= asked,
+                  "role %s requires %s, which the task does not grant"
+                  % (task.get("role_id"), sorted(floor - asked)))
+
+        # The effective requirement is the UNION of role and task. A role's
+        # optional_capabilities is not a ceiling: a testing task may legitimately
+        # require tool-isolation even though the testing role never mentions it.
+        task_caps = set(task.get("required_capabilities", []))
+        unknown = sorted(task_caps - set(CAPABILITY_VOCABULARY))
+        rep.check("task %s requires only known capabilities" % tid, not unknown,
+                  "unknown: %s" % unknown)
+        effective = sorted(task_caps | set(role.get("required_capabilities", [])))
+        if effective:
+            print("  note  task %s effective required capabilities: %s"
+                  % (tid, ", ".join(effective)))
 
     # Write paths: workspace-relative, contained, directory prefixes end in "/".
     for p in (task.get("scope") or {}).get("write_paths", []):
@@ -360,6 +391,9 @@ def main(argv):
     ap.add_argument("--task", action="append", default=[])
     ap.add_argument("--result", action="append", default=[])
     ap.add_argument("--ledger", default=None, help="JSON with accepted_dispatch_ids")
+    ap.add_argument("--capabilities", default=None,
+                    help="runtime capability record. When given, the union of role and "
+                         "task required capabilities is enforced against its evidence.")
     args = ap.parse_args(argv)
 
     if not (args.schema or args.semantic):
@@ -383,6 +417,21 @@ def main(argv):
         graph = dict((t.get("task_id"), t.get("dependencies") or []) for t in tasks)
         for task in tasks:
             semantic_task(task, roles, catalog, rep, graph)
+
+        # The union, checked against real evidence when a record is supplied.
+        # Same verdict logic the renderer uses — one implementation, so a task
+        # cannot be accepted against a record the renderer would reject.
+        if args.capabilities:
+            gate = capability_gate(root)
+            record = gate.load_capability_record(args.capabilities, root)
+            for task in tasks:
+                role = roles.get(task.get("role_id")) or {}
+                effective = sorted(set(task.get("required_capabilities") or [])
+                                   | set(role.get("required_capabilities") or []))
+                for capability in effective:
+                    ok, why = gate.capability_verdict(record, capability)
+                    rep.check("task %s: %s is evidenced by the supplied record"
+                              % (task.get("task_id"), capability), ok, why)
         if graph:
             cycle = detect_cycles(graph)
             rep.check("dependency graph is acyclic", cycle is None, "cycle: %s" % cycle)

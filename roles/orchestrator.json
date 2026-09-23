@@ -42,5 +42,8 @@
     "execute",
     "network",
     "delegate"
+  ],
+  "required_permissions": [
+    "read"
   ]
 }

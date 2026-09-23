@@ -2,7 +2,7 @@
   "contract_version": "0.3.0",
   "kind": "role",
   "id": "review",
-  "purpose": "Assess correctness and maintainability of another contributor’s scoped change.",
+  "purpose": "Assess correctness and maintainability of another contributor\u2019s scoped change.",
   "responsibilities": [
     "Read full relevant flows and baseline diff",
     "Report material findings with evidence"
@@ -36,5 +36,8 @@
     "read",
     "write",
     "execute"
+  ],
+  "required_permissions": [
+    "read"
   ]
 }

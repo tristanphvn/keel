@@ -113,6 +113,36 @@ def main(argv):
         dict(r["provenance"]["delivered_skills"][0]))
     write(out, "dup-delivery", t, r)
 
+    # --- permission floor and capability union (review findings R1, R2) ------
+
+    # A task that grants less than the role's floor: the role cannot discharge
+    # its responsibility, and only a cross-document check sees it.
+    t, r = pair()
+    t["role_id"] = "testing"          # floor: read, execute
+    t["permissions"] = ["read"]
+    write(out, "below-floor", t, r)
+
+    # The same task granting exactly the floor is fine.
+    t, r = pair()
+    t["role_id"] = "testing"
+    t["permissions"] = ["read", "execute"]
+    write(out, "at-floor", t, r)
+
+    # Above the floor and inside the ceiling is also fine: a review saving its
+    # report needs write, which its floor does not include.
+    t, r = pair()
+    t["role_id"] = "review"           # floor: read, ceiling: read/write/execute
+    t["permissions"] = ["read", "write"]
+    write(out, "above-floor", t, r)
+
+    # A task may require a capability its role never lists — the effective
+    # requirement is the union, and optional_capabilities is not a ceiling.
+    t, r = pair()
+    t["role_id"] = "testing"
+    t["permissions"] = ["read", "execute"]
+    t["required_capabilities"] = ["tool-isolation"]
+    write(out, "task-capability", t, r)
+
     # --- dependency graphs ----------------------------------------------------
 
     a, _ = pair(); a["task_id"] = "t-cycle-a"; a["dependencies"] = ["t-cycle-b"]

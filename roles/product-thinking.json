@@ -32,5 +32,8 @@
   "permission_ceiling": [
     "read",
     "write"
+  ],
+  "required_permissions": [
+    "read"
   ]
 }
