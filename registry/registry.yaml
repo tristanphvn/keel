@@ -6,9 +6,12 @@
 # When status is `replaced`, set `replaced_by: <skill-id>`.
 # `legacy_name` = the current on-disk directory name when it does not yet match
 # the <domain>-<skill-name> convention. Migration is deliberate and not yet done.
+# `depends_on` = registry ids of skills this skill's own instructions tell the
+# agent to load. Inventory metadata only: no runtime reads it, so a dependency is
+# loaded only because the depending SKILL.md says when to load it.
 
 version: 1
-updated: 2026-09-21
+updated: 2026-09-25
 
 conventions:
   skill_path: >-
@@ -68,6 +71,7 @@ skills:
     depends_on:
       - review-intent-first
       - review-adversarial-consensus
+      - sec-security-review
     rules: [TEST-001, REVIEW-002]
     version: 1
     notes: >
@@ -190,8 +194,9 @@ skills:
     domain: eng
     status: active
     auto_trigger: true
-    purpose: Design and execute meaningful behavior checks against acceptance criteria. Use for regression tests, reproductions, integration verification and QA evidence.
-    depends_on: []
+    purpose: Plan, design and execute behavior checks against acceptance criteria — test planning, test gaps, regressions, reproductions, integration verification and QA evidence.
+    depends_on:
+      - sec-security-review
     rules: [TEST-001, VERIFY-001, API-001, API-002, SCOPE-001, SCOPE-003]
     version: 1
 
@@ -199,7 +204,7 @@ skills:
     domain: sec
     status: active
     auto_trigger: true
-    purpose: Review authentication, authorization, trust boundaries, tenant isolation, secrets and sensitive data handling. Use for security reviews and threat modeling of scoped changes.
+    purpose: Review authentication, authorization, trust boundaries, tenant isolation, secrets and sensitive data handling; owns the canonical preventive checklist and credential-exposure response.
     depends_on: []
     rules: [CODE-002, VERIFY-002, TEST-001, SCOPE-003, CONSENSUS-001, CONSENSUS-002]
     version: 1

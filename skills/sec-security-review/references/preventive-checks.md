@@ -2,6 +2,21 @@
 
 Use this checklist for the affected surfaces, not as a mandatory full audit for every edit. Identify the repository, revision, data sensitivity and deployment boundaries first. Mark each relevant item PASS, FAIL or NOT VERIFIED with evidence; mark irrelevant items NOT APPLICABLE with a reason.
 
+## Selecting checks by surface
+
+Coverage is judged against the surfaces the task actually touches, not against how many items were mentioned.
+
+| Surface touched | Items that apply |
+|---|---|
+| Authentication, authorization, tenant or ownership scoping | authorization bullet; negative tests (procedure step 5) |
+| API, export or UI data output | data-path tracing; explicit response fields; negative tests asserting absent fields |
+| Logging, telemetry, error handling | redaction bullet; failure-path check with fake values |
+| Caches of personalized data | cache bullet |
+| Secrets, credentials, environment configuration | client-exposure bullet; least-privilege bullet; scanner procedure (steps 2–3) |
+| Client bundle, build configuration, published artifacts | client-exposure bullet; artifact inspection (step 4) |
+
+An API-only change does not require build-artifact inspection; a client or build change does. A surface outside the task stays out of scope and is not reported as NOT VERIFIED.
+
 ## Data paths and controls
 
 - Trace sensitive input through storage, transformation and every output: API, UI, export, cache, queue, log, telemetry and build artifact. Include error paths.

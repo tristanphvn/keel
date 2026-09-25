@@ -13,7 +13,7 @@ description: Review authentication, authorization, trust boundaries, tenant isol
 
 ## Preventive implementation and verification
 
-For changes to authentication, authorization, API serialization, logging, telemetry, caches, configuration or client/build boundaries, load [Preventive security checks](references/preventive-checks.md). Select checks by affected data paths and record scoped evidence. Use this during implementation as well as review; do not wait for an incident. The checklist is canonical; Testing and Review reference it rather than maintaining copies.
+For changes to authentication, authorization, API serialization, logging, telemetry, caches, configuration or client/build boundaries, load [Preventive security checks](references/preventive-checks.md). Select checks with its surface table and record scoped evidence; coverage means the touched surfaces were checked, not that every item was mentioned. Use this during implementation as well as review; do not wait for an incident. The checklist is canonical; Testing and Review reference it rather than maintaining copies.
 
 ## Prevent secret exposure
 

@@ -30,6 +30,15 @@ For every finding, verify it in the source before writing it down:
 
 If a finding cannot be traced to `file:line`, it is not a finding yet.
 
+## Step 2.5 — Assess security relevance before concluding
+
+Decide explicitly, from the code you read, whether the change touches a security boundary: authentication, authorization or tenant scoping, data returned by an API or export, logging/telemetry/error output, caches of personalized data, secrets or credentials, or client/build configuration and published artifacts.
+
+- **Relevant:** load the [sec-security-review](../sec-security-review/SKILL.md) skill now, before writing findings, and read the sections of its [preventive checklist](../sec-security-review/references/preventive-checks.md) that match the touched surfaces. Trace each affected data path and judge the test evidence independently; passing ordinary tests or a source scanner does not establish absence of disclosure.
+- **Not relevant:** say so in one line, naming what the change touches instead. Do not load the security skill for it.
+
+Cover the surfaces the change actually touches, not every checklist item: an API-only change needs serialization and authorization evidence, not build-artifact inspection; a client/build change does need the artifact check. Mark relevant checks without evidence NOT VERIFIED, report demonstrated failures separately, and never conclude "no leaks" from a scoped review. Preserve redaction when showing file contents, diffs or scanner output, including in Step 1. An inherited exposure remains an explicit risk with an owner/action even when this change did not introduce it; do not silently expand the fix scope.
+
 ## Step 3 — Check against the spec, not against taste
 
 Find the spec (`docs/`, the ticket, the design file) and quote the clause. "Spec §6 line 147 says error screen; the code returns 404" is a finding. "I would have done it differently" is not.
@@ -52,10 +61,6 @@ Flag wording only when it changes behavior or scope, contradicts another require
 
 For UI changes, the spec includes the product's own visual language. A screen that ignores the established spacing, density, dialog, or typography pattern — or that ships fashionable decoration with no product reason — is a real finding, not taste. See `ui-design-discipline`. Judging it requires visual evidence (screenshot or rendered page); without that, say the visual result was not inspected.
 
-## Security evidence
-
-When the change touches authentication, authorization, API data, logging, telemetry, caches, secrets or client/build configuration, load [sec-security-review](../sec-security-review/SKILL.md) and its preventive checklist. Trace the affected data path and evaluate the test evidence independently; passing ordinary tests or a source scanner does not establish absence of disclosure. Report missing relevant verification and demonstrated failures distinctly. Preserve redaction before showing file contents, diffs or scanner output, including during Step 1. An inherited exposure remains an explicit risk with an owner/action, even when it is not introduced by this PR; do not silently expand the fix scope.
-
 ## Step 4 — Report
 
 Order by severity, most severe first. One line each, then detail only where detail changes what the author does.
@@ -68,6 +73,8 @@ Order by severity, most severe first. One line each, then detail only where deta
 | ⚪ nit | Cosmetic; author's call |
 
 Format: `path:line — <what is wrong>. <what to do>.`
+
+State the Step 2.5 security-relevance result — the surfaces touched and their checks, or "not security-relevant" with the reason.
 
 Also state plainly what is correct, in one compact block — the author needs to know which parts were actually checked, not just where the complaints are. Do not pad it into praise.
 
@@ -89,6 +96,7 @@ If the author or another agent pushes back, re-read the code and verify. Wrong �
 ## Related skills
 
 - `ticket-pr` — turning the findings into a review card / PR comment
+- `sec-security-review` — loaded from Step 2.5 when the change touches a security boundary
 
 ## Governing global rules
 
