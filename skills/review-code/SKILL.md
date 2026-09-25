@@ -52,6 +52,10 @@ Flag wording only when it changes behavior or scope, contradicts another require
 
 For UI changes, the spec includes the product's own visual language. A screen that ignores the established spacing, density, dialog, or typography pattern — or that ships fashionable decoration with no product reason — is a real finding, not taste. See `ui-design-discipline`. Judging it requires visual evidence (screenshot or rendered page); without that, say the visual result was not inspected.
 
+## Security evidence
+
+When the change touches authentication, authorization, API data, logging, telemetry, caches, secrets or client/build configuration, load [sec-security-review](../sec-security-review/SKILL.md) and its preventive checklist. Trace the affected data path and evaluate the test evidence independently; passing ordinary tests or a source scanner does not establish absence of disclosure. Report missing relevant verification and demonstrated failures distinctly. Preserve redaction before showing file contents, diffs or scanner output, including during Step 1. An inherited exposure remains an explicit risk with an owner/action, even when it is not introduced by this PR; do not silently expand the fix scope.
+
 ## Step 4 — Report
 
 Order by severity, most severe first. One line each, then detail only where detail changes what the author does.
