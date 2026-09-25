@@ -193,6 +193,36 @@ resolves the same directory to `/tmp/...` through a junction and to
 `/c/<user>/...` directly, so raw string comparison reports a healthy link as
 broken.
 
+## Permission approval vs tool availability — measured on Claude Code 2.1.282
+
+Probe: `tests/probes/permission-enforcement.sh`, Windows (Git Bash), 2026-09-25, model
+haiku, `--permission-mode default`, user settings with deny rules only (no allow rules,
+no `defaultMode`). Record: `capabilities/records/claude-code-2.1.282-windows.json`.
+
+| Arm | Bash in tool list | `git --version` | `git status && find …` | `echo … > file` |
+| --- | --- | --- | --- | --- |
+| parent, `--allowedTools Read` | yes | refused (`is_error=true`) | ran (`is_error=false`) | refused; no file |
+| general-purpose child, parent `--allowedTools Agent,Read` | yes | refused | ran | refused; no file |
+| general-purpose child, parent `--tools Agent,Read` | **no** | not attempted | not attempted | not attempted; no file |
+
+What this establishes, and no more:
+
+- `--allowedTools` **pre-approves** calls. It does not remove tools; anything outside it needs
+  approval, which a non-interactive session cannot give, so it was refused — in the parent
+  and, identically, in the sub-agent.
+- The runtime auto-approved a command it classified as read-only (`git status`, `find`)
+  without any allow rule. An earlier report of a sub-agent "running Bash despite the allow
+  list" was this: a read-only listing, not a permission bypass. Writes were refused.
+- `--tools` controls **availability**: the child had no Bash to call. Nothing was refused,
+  so this is availability, not enforcement.
+- An agent definition's `tools:` restriction — the contract's `tool-isolation` — was not
+  re-measured here and stays `unmeasured` for 2.1.282. Only one sub-agent type
+  (general-purpose) was tested; other types are unverified.
+
+The adapters and renderer do not configure `--allowedTools` or permission modes. Tool limits
+they render are `tools:` lists, which govern availability, and the renderer accepts a
+`tool-isolation` requirement only against a record for the exact runtime version.
+
 ## Codex — documented, NOT measured
 
 The Codex CLI is not installed on the measurement host. Every row below comes

@@ -6,6 +6,7 @@
 #   AGENT_HOME=~/.claude bash scripts/adapters/claude.sh --apply    # writes, after backing up
 #   AGENT_HOME=~/.claude bash scripts/adapters/claude.sh --check    # verify an existing install
 #   AGENT_HOME=~/.claude bash scripts/adapters/claude.sh --remove   # take the block back out
+#   AGENT_HOME=~/.claude bash scripts/adapters/claude.sh --dedupe-rule-imports  # drop @rules/ imports
 #
 # Claude Code auto-loads $AGENT_HOME/rules/*.md, so the rules need no imports.
 # The only thing this adapter writes is a marker-delimited block inside
@@ -21,7 +22,8 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 
 as_preflight sed awk grep find cmp diff cp mv rm mkdir mktemp date basename dirname || exit 1
 
-DEST="${AGENT_HOME:-$HOME/.agent}"
+# Same native spelling as install.sh, so the rendered block matches what it installed.
+DEST="$(as_native_path "${AGENT_HOME:-$HOME/.agent}")"
 BLOCK_SRC="$ROOT/config/claude/CLAUDE.md.block"
 TARGET="$DEST/CLAUDE.md"
 BEGIN='<!-- agent-skills:begin -->'
@@ -45,6 +47,7 @@ for arg in "$@"; do
     --remove)        ACTION=remove ;;
     --link-skills)   ACTION=link ;;
     --unlink-skills) ACTION=unlink ;;
+    --dedupe-rule-imports) ACTION=dedupe ;;
     *) echo "unknown argument: $arg" >&2; exit 2 ;;
   esac
 done
@@ -67,6 +70,24 @@ echo
 DEST_ESC="$(printf '%s' "$DEST" | sed -e 's/[\\&|]/\\&/g')"
 render_block() { LC_ALL=C sed "s|{{AGENT_HOME}}|$DEST_ESC|g" "$BLOCK_SRC"; }
 
+# rule_imports FILE — print each `@` import line in FILE whose target is an
+# installed $DEST/rules/*.md. Claude Code auto-loads those files, so such a line
+# is a second copy. Matched by location, not spelling: ~/, /c/ and C:/ forms of
+# the same path all count; a different directory never does.
+rule_imports() {
+  [ -f "$1" ] || return 0
+  _rules_key="$(printf '%s\n' "$DEST/rules" | as_path_keys)"
+  while IFS= read -r _line || [ -n "$_line" ]; do
+    case "$_line" in @*) ;; *) continue ;; esac
+    _ref="${_line#@}"; _ref="${_ref%"${_ref##*[![:space:]]}"}"
+    case "$_ref" in "~/"*) _ref="$HOME/${_ref#"~/"}" ;; esac
+    case "$_ref" in *.md) ;; *) continue ;; esac
+    [ "$(as_native_path "$(dirname "$_ref")" | as_path_keys)" = "$_rules_key" ] || continue
+    [ -f "$DEST/rules/$(basename "$_ref")" ] || continue
+    printf '%s\n' "$_line"
+  done < "$1"
+}
+
 if [ "$ACTION" = check ]; then
   echo "== Claude Code integration =="
   [ -d "$DEST/rules" ] && ok "$DEST/rules exists (auto-loaded by Claude Code)" \
@@ -83,8 +104,8 @@ if [ "$ACTION" = check ]; then
 
   if [ -f "$TARGET" ]; then
     if grep -qF "$BEGIN" "$TARGET"; then ok "managed block present in $TARGET"; else bad "managed block absent from $TARGET"; fi
-    if grep -qE '^@.*/rules/' "$TARGET"; then
-      bad "$TARGET imports rules/ explicitly — they already auto-load, so each rule loads twice"
+    if [ -n "$(rule_imports "$TARGET")" ]; then
+      bad "$TARGET imports rules/ explicitly — they already auto-load, so each rule loads twice (fix: --dedupe-rule-imports)"
     else
       ok "no duplicate rule imports in $TARGET"
     fi
@@ -199,8 +220,22 @@ has_block=0
 printf '%s\n' "$existing" | grep -qF "$BEGIN" && has_block=1
 
 # Build the new content: replace between markers if present, else append.
-tmp="$(mktemp)"; trap 'rm -f "$tmp" "$tmp.blk"' EXIT
-if [ "$ACTION" = remove ]; then
+tmp="$(mktemp)"; trap 'rm -f "$tmp" "$tmp.blk" "$tmp.drop"' EXIT
+if [ "$ACTION" = dedupe ]; then
+  # Claude Code already loads $DEST/rules/*.md, so an `@` import of one of those
+  # files — anywhere in CLAUDE.md, however it was spelled — is a second copy.
+  # Only such import lines go; every other line, including headings around
+  # them and imports of anything else, is kept byte for byte.
+  if [ -z "$existing" ]; then echo "  $TARGET is absent or empty; nothing to dedupe."; exit 0; fi
+  rule_imports "$TARGET" > "$tmp.drop"
+  if [ ! -s "$tmp.drop" ]; then
+    echo "  no rule imports in $TARGET; nothing to dedupe."
+    exit 0
+  fi
+  sed 's/^/  drop  /' "$tmp.drop"
+  printf '%s\n' "$existing" | awk 'NR == FNR { d[$0] = 1; next } !($0 in d) { print }' "$tmp.drop" - > "$tmp"
+  action="DROP duplicate rule imports from"
+elif [ "$ACTION" = remove ]; then
   if [ "$has_block" -eq 0 ]; then
     echo "  managed block not present; nothing to remove."
     exit 0
@@ -263,7 +298,7 @@ if [ -n "$mode" ]; then
 else
   chmod 644 "$TARGET" 2>/dev/null || true
 fi
-trap - EXIT; rm -f "$tmp.blk"
+trap - EXIT; rm -f "$tmp.blk" "$tmp.drop"
 echo "  written: $TARGET"
 echo
 echo "Applied. Restart Claude Code, then: bash scripts/adapters/claude.sh --check"

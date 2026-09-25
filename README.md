@@ -30,7 +30,7 @@ Files that get installed carry the literal token `{{AGENT_HOME}}` wherever they 
 
 Three layers, deliberately separate:
 
-- **Rules — always on.** Every file in `rules/` is imported by `config/AGENTS.md` and loads in every session. Short behavior statements, no procedures. 28 rule IDs across 10 families: `VERIFY-*`, `SCOPE-*`, `ROOT-*`, `CODE-*`, `TEST-*`, `API-*`, `REVIEW-*`, `CORRECTION-*`, `UI-*`, `CONSENSUS-*`. Each ID is defined exactly once.
+- **Rules — always on.** Every file in `rules/` is imported by `config/AGENTS.md` and loads in every session. Short behavior statements, no procedures. 29 rule IDs across 10 families: `VERIFY-*`, `SCOPE-*`, `ROOT-*`, `CODE-*`, `TEST-*`, `API-*`, `REVIEW-*`, `CORRECTION-*`, `UI-*`, `CONSENSUS-*`. Each ID is defined exactly once.
 - **Skills — lazy.** Loaded only when the task matches. Multi-step workflows live here, never in rules. Runtime discovery requires the flat layout `$AGENT_HOME/skills/<name>/SKILL.md`, so the repo keeps that shape verbatim — **no domain subdirectories**, even though registry ids are domain-prefixed.
 - **Registry — management only.** `registry/registry.yaml` carries what `SKILL.md` frontmatter cannot: canonical id, domain, status, `depends_on`, and the `rules:` linkage back into `rules/`. `legacy_name` records the on-disk directory when it does not yet match the `<domain>-<skill-name>` convention.
 
@@ -59,7 +59,7 @@ bash scripts/sync-from-local.sh --apply      # copies into the working tree only
 git diff                                     # review before staging
 ```
 
-Neither script deletes. `install.sh` reports machine-only files and leaves them alone; `sync-from-local.sh` reports repo-only files so a rename does not leave a stale copy unnoticed. Override the target with `AGENT_HOME=/some/path`.
+Neither script deletes. `install.sh` reports machine-only files and leaves them alone; `sync-from-local.sh` reports repo-only files so a rename does not leave a stale copy unnoticed. Override the target with `AGENT_HOME=/some/path`. On Git Bash, `/d/work/.agent`, `D:/work/.agent` and `D:\work\.agent` name one destination: paths are recorded and rendered in the drive-rooted form, and a manifest written under another spelling is still recognised.
 
 Both scripts exit non-zero if any write fails or is refused; a dry run writes nothing at all,
 not even a directory. `install.sh` backs up to `$AGENT_HOME/backups/install-<timestamp>/` and
@@ -76,6 +76,7 @@ AGENT_HOME=~/.claude bash scripts/adapters/claude.sh            # preview
 AGENT_HOME=~/.claude bash scripts/adapters/claude.sh --apply    # writes, after backing up CLAUDE.md
 AGENT_HOME=~/.claude bash scripts/adapters/claude.sh --check    # verify an installed setup
 AGENT_HOME=~/.claude bash scripts/adapters/claude.sh --remove   # reverse it exactly
+AGENT_HOME=~/.claude bash scripts/adapters/claude.sh --dedupe-rule-imports [--apply]  # drop duplicate @rules/ imports
 ```
 
 Claude Code auto-loads `$AGENT_HOME/rules/*.md` and does **not** read `$AGENT_HOME/AGENTS.md`

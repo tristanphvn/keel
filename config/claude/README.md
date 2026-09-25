@@ -40,7 +40,15 @@ bash scripts/adapters/claude.sh            # preview
 bash scripts/adapters/claude.sh --apply    # writes, after backing up CLAUDE.md
 bash scripts/adapters/claude.sh --check    # verify an existing install
 bash scripts/adapters/claude.sh --remove   # take the managed block back out
+bash scripts/adapters/claude.sh --dedupe-rule-imports          # preview dropping duplicate rule imports
+bash scripts/adapters/claude.sh --dedupe-rule-imports --apply  # drop them, after backing up CLAUDE.md
 ```
+
+`--dedupe-rule-imports` is the one action that edits `CLAUDE.md` outside the managed markers,
+and only when asked. It removes exactly the `@` import lines whose target is an installed
+`$AGENT_HOME/rules/*.md` (in any spelling of that path: `~/`, `/c/`, `C:/`), because
+Claude Code already auto-loads those files. Headings, other imports and every other line
+are kept byte for byte; `--check` flags the same lines it would remove.
 
 ```bash
 bash scripts/adapters/claude.sh --link-skills --apply     # only when AGENT_SKILLS_DIR is set

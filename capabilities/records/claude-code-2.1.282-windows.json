@@ -1,0 +1,76 @@
+{
+  "record_version": 2,
+  "kind": "runtime-capability-record",
+  "status": "measured",
+  "runtime": {
+    "family": "claude-code",
+    "version": "2.1.282"
+  },
+  "platform": {
+    "os": "windows",
+    "detail": "MINGW64_NT-10.0-26200"
+  },
+  "measured_at": "2026-09-25",
+  "adapter_revision": "branch fix/installer-paths-skill-activation on 48621a9beb734094d6ac2fe7328d0b51b619d5e8",
+  "capabilities": {
+    "spawn": {
+      "state": "observed",
+      "evidence": [
+        {
+          "probe": "tests/probes/permission-enforcement.sh",
+          "probe_sha256": "28855f899b04f836aa08a17c76e479f71cb5f708f517392550b2ec6516e396d3",
+          "kind": "observation",
+          "observation": "In the child-allow-agent arm the parent's Agent call started a general-purpose sub-agent whose own Bash tool_use blocks appeared in the stream tagged with the parent's tool_use id."
+        }
+      ]
+    },
+    "tool-isolation": {
+      "state": "unmeasured",
+      "reason": "Not re-measured on 2.1.282. The contract capability concerns an agent definition's `tools:` restriction, measured only on 2.1.220 (see that record). This run measured session-level tool availability (`--tools`) and permission approval, which are recorded under `observations` and do not decide this capability."
+    },
+    "model-selection": {
+      "state": "unmeasured",
+      "reason": "No model-selection probe was run on 2.1.282; the 2.1.220 measurement does not carry to another version."
+    },
+    "fresh-context": {
+      "state": "unmeasured",
+      "reason": "No fresh-context probe was run on 2.1.282; the 2.1.220 measurement does not carry to another version."
+    },
+    "workspace-isolation": {
+      "state": "unmeasured",
+      "reason": "No probe has tested whether the runtime provides a separate writable workspace per task."
+    }
+  },
+  "observations": [
+    {
+      "id": "permission-approval",
+      "summary": "Permission approval applied equally to a parent session and to the general-purpose sub-agent it spawned, under --permission-mode default with no allow rules in user settings. Calls outside `--allowedTools` were refused unless the runtime classified them as read-only.",
+      "not_a_claim_about": [
+        "tool-isolation"
+      ],
+      "evidence": [
+        {
+          "probe": "tests/probes/permission-enforcement.sh",
+          "probe_sha256": "28855f899b04f836aa08a17c76e479f71cb5f708f517392550b2ec6516e396d3",
+          "kind": "observation",
+          "observation": "With --allowedTools Read (parent) and Agent,Read (child): Bash `git --version` and `echo … > file` returned is_error=true and no file was written, in both the parent and the child; Bash `git status --short && find … -print` returned is_error=false in both, so the runtime auto-approved it as read-only. --allowedTools pre-approves calls; it does not remove tools from the session."
+        }
+      ]
+    },
+    {
+      "id": "session-tool-availability",
+      "summary": "`--tools Agent,Read` removed Bash from the session's tool list; the spawned child emitted no Bash call and no file was written.",
+      "not_a_claim_about": [
+        "tool-isolation"
+      ],
+      "evidence": [
+        {
+          "probe": "tests/probes/permission-enforcement.sh",
+          "probe_sha256": "28855f899b04f836aa08a17c76e479f71cb5f708f517392550b2ec6516e396d3",
+          "kind": "observation",
+          "observation": "In the child-tools-agent arm the parent init listed no Bash tool, the child produced no Bash tool_use, and childtools.txt was not created. No refusal was observed because no call was made, so this is availability, not enforcement."
+        }
+      ]
+    }
+  ]
+}
