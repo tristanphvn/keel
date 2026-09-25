@@ -11,6 +11,10 @@ description: Review authentication, authorization, trust boundaries, tenant isol
 4. Validate with local fixtures or explicitly authorized targets. Review authority is not authorization to attack external services, extract secrets or mutate production data.
 5. Compare against the baseline, retain unresolved risk explicitly, and seek independent falsification for consequential conclusions. Report a scoped verdict; absence of findings is not a guarantee of security.
 
+## Preventive implementation and verification
+
+For changes to authentication, authorization, API serialization, logging, telemetry, caches, configuration or client/build boundaries, load [Preventive security checks](references/preventive-checks.md). Select checks by affected data paths and record scoped evidence. Use this during implementation as well as review; do not wait for an incident. The checklist is canonical; Testing and Review reference it rather than maintaining copies.
+
 ## Prevent secret exposure
 
 Treat production passwords, API keys, private keys, tokens, signing secrets, database URLs with credentials, and session cookies as secrets. Do not paste their values into chat, commits, PRs, issues, examples, screenshots, logs, or learner records. Use placeholders and provider-issued non-secret identifiers. Do not ask the user to paste a secret to diagnose an incident.

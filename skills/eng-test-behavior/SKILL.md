@@ -12,6 +12,10 @@ description: Design and execute meaningful behavior checks against acceptance cr
 5. Record command, environment/revision, observed result and criterion coverage. Separate baseline failures, introduced regressions, skipped checks and inaccessible dependencies. Do not equate a mock result with production behavior.
 6. Report defects to the implementation owner with a minimal reproduction. Do not change product code merely to make tests green unless that work is assigned.
 
+## Security-sensitive behavior
+
+For changes affecting access control or sensitive data paths, load [sec-security-review](../sec-security-review/SKILL.md) and its preventive checklist. Turn relevant criteria into executable negative tests and successful authorized controls using synthetic data. Record actual results separately from proposed cases and static inspection. Missing scanner, build output or authorized environment means NOT VERIFIED, not PASS. Keep product fixes with the assigned implementation owner.
+
 ## Governing global rules
 
 TEST-001, VERIFY-001, API-001, API-002, SCOPE-001, SCOPE-003.
