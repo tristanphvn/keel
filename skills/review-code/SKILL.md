@@ -1,6 +1,6 @@
 ---
 name: review-code
-description: Use when reviewing someone else's code — a PR, a branch diff, a colleague's commit, a file handed over for checking. Triggers on "review PR", "review diff", "check code này", "soi code", "audit file", "kiểm tra code đồng nghiệp". Not for reviewing your own uncommitted work (use /code-review) and not for writing the review ticket (use ticket-pr).
+description: Use when reviewing committed or handed-over code — a PR, a branch diff, a commit (yours or a colleague's), a file handed over for checking. Triggers on "review PR", "review diff", "review the latest commit", "look over this commit before I merge", "quick review", "check code này", "soi code", "audit file", "kiểm tra code đồng nghiệp". Not for your own uncommitted working-tree changes (use /code-review) and not for writing the review ticket (use ticket-pr).
 ---
 
 # Review code

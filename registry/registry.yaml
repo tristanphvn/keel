@@ -67,7 +67,7 @@ skills:
     domain: review
     status: active
     auto_trigger: true
-    purpose: Review someone else's code — PR, branch diff, handed-over file — with severity ladder and file:line evidence.
+    purpose: Review committed or handed-over code — PR, branch diff, commit, handed-over file — with severity ladder and file:line evidence.
     depends_on:
       - review-intent-first
       - review-adversarial-consensus
