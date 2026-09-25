@@ -102,6 +102,78 @@ out="$(AGENT_HOME="$HE" $INSTALL --apply 2>&1)"; rc=$?
 assert_eq "…and an unedited re-install is not a false positive" 0 "$rc"
 assert_not_contains "…with no conflict reported" "$out" "CONFLICT"
 
+# --- equivalent spellings of one destination are one destination ----------------
+# On Git Bash, /d/work/.agent and D:/work/.agent are the same directory.
+# The manifest used to be keyed by the literal spelling, so a second spelling
+# made every owned file look foreign: the local-edit check was skipped (the
+# edit was silently overwritten on --apply), every entry was reported STALE, and
+# `uninstall.sh --stale --apply` would have removed every file still shipped.
+if command -v cygpath >/dev/null 2>&1; then
+  HP="$(sandbox_new)"
+  NATIVE="$(cygpath -m "$HP")"   # C:/.../tmp.X
+  POSIX="$(cygpath -u "$HP")"    # /c/.../tmp.X or /tmp/tmp.X
+  BACKSL="$(cygpath -w "$HP")"   # C:\...\tmp.X
+  AGENT_HOME="$NATIVE" $INSTALL --apply >/dev/null 2>&1
+
+  out="$(AGENT_HOME="$POSIX" $INSTALL 2>&1)"; rc=$?
+  assert_eq "another spelling of an unchanged install exits 0" 0 "$rc"
+  assert_not_contains "…reports no false STALE entries" "$out" "STALE"
+  assert_contains "…and nothing to change" "$out" "0 file(s) would change"
+  out="$(AGENT_HOME="$BACKSL" $INSTALL 2>&1)"
+  assert_not_contains "a backslash spelling reports no STALE entries either" "$out" "STALE"
+  assert_contains "…and nothing to change" "$out" "0 file(s) would change"
+
+  HR="$(sandbox_new)"; HRP="$(cygpath -u "$HR")"; HRN="$(cygpath -m "$HR")"
+  AGENT_HOME="$HRP" $INSTALL --apply >/dev/null 2>&1
+  leftover="$(grep -rlF "$HRP/" "$HR/rules" "$HR/skills" "$HR/skill-registry" 2>/dev/null | wc -l)"
+  assert_eq "a POSIX-spelled AGENT_HOME renders {{AGENT_HOME}} natively" 0 "$leftover"
+  assert_contains "…and records native paths in the manifest" "$(head -1 "$HR/.agent-skills/manifest.tsv")" "$HRN/"
+
+  out="$(AGENT_HOME="$POSIX" $UNINSTALL --stale 2>&1)"; rc=$?
+  assert_eq "uninstall --stale under another spelling exits 0" 0 "$rc"
+  assert_contains "…and finds nothing stale to remove" "$out" "0 file(s) to remove"
+
+  EDITED="$HP/skills/review-code/SKILL.md"
+  printf '\n## Local customization\n' >> "$EDITED"
+  edited_sum="$(sha256sum < "$EDITED")"
+  fp="$(tree_fingerprint "$HP")"
+  out="$(AGENT_HOME="$POSIX" $INSTALL --apply 2>&1)"; rc=$?
+  assert_ne "an edit is a conflict under another spelling too" 0 "$rc"
+  assert_contains "…reported as a conflict" "$out" "CONFLICT (edited since installed"
+  assert_eq "…the edit survives byte for byte" "$edited_sum" "$(sha256sum < "$EDITED")"
+  assert_eq "…and nothing at all was written" "$fp" "$(tree_fingerprint "$HP")"
+
+  # A manifest written by an older installer under the POSIX spelling is read
+  # as the same files, and the next apply rewrites it in the native spelling.
+  HL="$(sandbox_new)"; HLN="$(cygpath -m "$HL")"; HLP="$(cygpath -u "$HL")"
+  AGENT_HOME="$HLN" $INSTALL --apply >/dev/null 2>&1
+  M="$HL/.agent-skills/manifest.tsv"
+  awk -F'\t' -v OFS='\t' -v n="$HLN" -v p="$HLP" \
+    '{ if (index($1, n) == 1) $1 = p substr($1, length(n) + 1); print }' "$M" > "$M.tmp" && mv "$M.tmp" "$M"
+  assert_contains "the legacy manifest really uses the POSIX spelling" "$(head -1 "$M")" "$HLP/"
+  out="$(AGENT_HOME="$HLN" $INSTALL 2>&1)"
+  assert_not_contains "a POSIX-spelled legacy manifest yields no false STALE" "$out" "STALE"
+  printf '\nedited\n' >> "$HL/rules/50-design.md"
+  out="$(AGENT_HOME="$HLN" $INSTALL 2>&1)"; rc=$?
+  assert_ne "…and still protects a local edit" 0 "$rc"
+  assert_contains "…as a conflict" "$out" "CONFLICT (edited since installed"
+else
+  t_pass "equivalent-spelling checks skipped: no cygpath, so this host has one spelling per path"
+fi
+
+# A genuinely different location is never folded into this one: an entry for a
+# sibling directory stays STALE even though its name shares a prefix.
+HD="$(sandbox_new)"
+AGENT_HOME="$HD" $INSTALL --apply >/dev/null 2>&1
+mkdir -p "$HD-other/rules"
+printf 'elsewhere\n' > "$HD-other/rules/00-operating-principles.md"
+printf '%s\t%s\n' "$HD-other/rules/00-operating-principles.md" \
+  "$(sha256sum "$HD-other/rules/00-operating-principles.md" | cut -d' ' -f1)" >> "$HD/.agent-skills/manifest.tsv"
+out="$(AGENT_HOME="$HD" $INSTALL 2>&1)"
+assert_contains "a different directory's entry is still STALE" "$out" "STALE"
+assert_contains "…named as the other directory" "$out" "-other/rules/00-operating-principles.md"
+rm -rf "$HD-other"
+
 # --- repeat installation is predictable --------------------------------------
 fp1="$(tree_fingerprint "$H")"
 out="$(AGENT_HOME="$H" $INSTALL --apply 2>&1)"

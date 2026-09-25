@@ -60,6 +60,51 @@ as_canon_path() {
   fi
 }
 
+# --- path identity for installed files ----------------------------------------
+#
+# On Git Bash one directory has several spellings: /d/work/.agent,
+# D:/work/.agent and D:\work\.agent. The installer records absolute paths
+# in its manifest and looks them up again on the next run, so a spelling that
+# differs from the recorded one used to make every owned file look foreign: the
+# local-edit check was skipped, every entry was reported STALE, and
+# `uninstall.sh --stale` would have offered to remove files that are still
+# shipped. These helpers give each location one native spelling for writing and
+# one comparison key for lookups. They only rewrite spellings cygpath maps to
+# the same location; distinct paths stay distinct. On a POSIX host (no cygpath)
+# both are the identity, because case and every character are significant there.
+
+AS_WINPATH=0
+command -v cygpath >/dev/null 2>&1 && AS_WINPATH=1
+
+# as_native_path PATH — the spelling written to disk, rendered into files and
+# recorded in the manifest: drive-rooted with forward slashes on Windows.
+as_native_path() {
+  if [ "$AS_WINPATH" = 1 ]; then
+    cygpath -m -- "$1" 2>/dev/null || printf '%s\n' "$1"
+  else
+    printf '%s\n' "$1"
+  fi
+}
+
+# as_manifest_rows FILE — one "native<TAB>key<TAB>hash" line per manifest entry.
+# The key is the native spelling, lowercased on Windows, where paths are
+# case-insensitive. One cygpath call converts the whole list.
+as_manifest_rows() {
+  [ -f "$1" ] || return 0
+  if [ "$AS_WINPATH" = 1 ]; then
+    paste <(awk -F'\t' 'NF { print $1 }' "$1" | tr '\\' '/' | cygpath -m -f -) \
+          <(awk -F'\t' 'NF { print $2 }' "$1") \
+      | awk -F'\t' -v OFS='\t' '{ print $1, tolower($1), $2 }'
+  else
+    awk -F'\t' -v OFS='\t' 'NF { print $1, $1, $2 }' "$1"
+  fi
+}
+
+# as_path_keys — filter: native paths on stdin, comparison keys on stdout.
+as_path_keys() {
+  if [ "$AS_WINPATH" = 1 ]; then tr '[:upper:]' '[:lower:]'; else cat; fi
+}
+
 # as_same_path A B — true when both resolve to the same physical location.
 as_same_path() {
   [ "$(as_canon_path "$1")" = "$(as_canon_path "$2")" ]

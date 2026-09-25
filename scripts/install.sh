@@ -28,15 +28,18 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 # Verify the toolchain before touching anything: a missing `diff` must not be
 # discovered after the backup step has already copied half the tree.
-as_preflight sed find cmp diff cp mv mkdir rm date basename dirname || exit 1
+as_preflight sed awk paste tr find cmp diff cp mv mkdir rm date basename dirname || exit 1
 
-DEST="${AGENT_HOME:-$HOME/.agent}"
+# One native spelling per location (see as_native_path): the manifest, the
+# rendered {{AGENT_HOME}} token and every lookup then agree whichever spelling
+# of the same directory the caller passed in.
+DEST="$(as_native_path "${AGENT_HOME:-$HOME/.agent}")"
 # The skills tree can be installed somewhere other than $AGENT_HOME/skills, for a
 # machine where that directory is already owned by something else (a separate
 # checkout, for instance). The runtime still has to SEE them at its own skills
 # path — an adapter links them into place. {{AGENT_HOME}} still renders to $DEST,
 # because the tokens inside skills point at rules/, skill-registry/ and logs/.
-SKILLS_DEST="${AGENT_SKILLS_DIR:-$DEST/skills}"
+SKILLS_DEST="$(as_native_path "${AGENT_SKILLS_DIR:-$DEST/skills}")"
 APPLY=0
 [ "${1:-}" = "--apply" ] && APPLY=1
 
@@ -99,8 +102,9 @@ write_rendered() {
 MANIFEST_DIR="$DEST/.agent-skills"
 MANIFEST="$MANIFEST_DIR/manifest.tsv"
 MANIFEST_TMP="$MANIFEST_DIR/manifest.tsv.tmp.$$"
-PREV_MANIFEST=""
-[ -f "$MANIFEST" ] && PREV_MANIFEST="$(cut -f1 "$MANIFEST")"
+# Previous entries as "native<TAB>key<TAB>hash". Lookups go by key, so an entry
+# recorded under another spelling of the same path is still recognised as ours.
+PREV_ROWS="$(as_manifest_rows "$MANIFEST")"
 INSTALLED_PATHS=""
 
 record() { INSTALLED_PATHS="$INSTALLED_PATHS$1
@@ -109,8 +113,10 @@ record() { INSTALLED_PATHS="$INSTALLED_PATHS$1
 # The hash recorded for a path on the previous run, or non-zero if this
 # installer never wrote it.
 prev_digest() {
-  [ -f "$MANIFEST" ] || return 1
-  awk -F'\t' -v p="$1" '$1 == p { print $2; found = 1; exit } END { exit !found }' "$MANIFEST"
+  [ -n "$PREV_ROWS" ] || return 1
+  printf '%s\n' "$PREV_ROWS" | awk -F'\t' -v p="$1" -v ci="$AS_WINPATH" '
+    BEGIN { if (ci == 1) p = tolower(p) }
+    $2 == p { print $3; found = 1; exit } END { exit !found }'
 }
 
 # Every file this run would install, as "<source>\t<destination>". This mirrors
@@ -283,15 +289,16 @@ EOF
 # (a renamed skill, a deleted rule). It is never deleted here — the uninstaller
 # is the only thing that removes, and only on request.
 stale=0
-if [ -n "$PREV_MANIFEST" ]; then
-  while IFS= read -r p; do
+if [ -n "$PREV_ROWS" ]; then
+  INSTALLED_KEYS="$(printf '%s' "$INSTALLED_PATHS" | as_path_keys)"
+  while IFS="$(printf '\t')" read -r p key _hash; do
     [ -z "$p" ] && continue
-    printf '%s\n' "$INSTALLED_PATHS" | grep -qxF "$p" && continue
+    printf '%s\n' "$INSTALLED_KEYS" | grep -qxF "$key" && continue
     [ -e "$p" ] || continue
     echo "  STALE (installed previously, no longer in repo) $p"
     stale=$((stale + 1))
   done <<EOF
-$PREV_MANIFEST
+$PREV_ROWS
 EOF
 fi
 

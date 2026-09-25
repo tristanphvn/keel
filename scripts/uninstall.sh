@@ -24,10 +24,11 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # shellcheck source=lib/common.sh
 . "$ROOT/scripts/lib/common.sh"
 
-as_preflight find cp rm mv mkdir date basename dirname || exit 1
+as_preflight awk paste tr find cp rm mv mkdir date basename dirname || exit 1
 
-DEST="${AGENT_HOME:-$HOME/.agent}"
-SKILLS_DEST="${AGENT_SKILLS_DIR:-$DEST/skills}"
+# Same native spelling as install.sh, so both agree on which entries are ours.
+DEST="$(as_native_path "${AGENT_HOME:-$HOME/.agent}")"
+SKILLS_DEST="$(as_native_path "${AGENT_SKILLS_DIR:-$DEST/skills}")"
 MANIFEST_DIR="$DEST/.agent-skills"
 MANIFEST="$MANIFEST_DIR/manifest.tsv"
 
@@ -89,11 +90,14 @@ $PAIRS
 EOF
 
 # --- classify every manifest entry -------------------------------------------
+# Compared by key, not by spelling: an entry recorded as /c/... is the same file
+# as the C:/... path the repo ships, and must not be classified as stale.
+CURRENT_KEYS="$(printf '%s' "$CURRENT" | as_path_keys)"
 to_remove=""; n_remove=0; n_modified=0; n_gone=0; n_kept_current=0
-while IFS="$(printf '\t')" read -r path hash; do
+while IFS="$(printf '\t')" read -r path key hash; do
   [ -z "${path:-}" ] && continue
   if [ ! -e "$path" ]; then n_gone=$((n_gone + 1)); continue; fi
-  if [ "$ONLY_STALE" -eq 1 ] && printf '%s\n' "$CURRENT" | grep -qxF "$path"; then
+  if [ "$ONLY_STALE" -eq 1 ] && printf '%s\n' "$CURRENT_KEYS" | grep -qxF "$key"; then
     n_kept_current=$((n_kept_current + 1)); continue
   fi
   now="$(as_sha256 "$path")"
@@ -111,7 +115,7 @@ while IFS="$(printf '\t')" read -r path hash; do
   echo "  REMOVE   $path"
   to_remove="$to_remove$path
 "; n_remove=$((n_remove + 1))
-done < "$MANIFEST"
+done < <(as_manifest_rows "$MANIFEST")
 
 echo
 echo "$n_remove file(s) to remove; $n_modified modified; $n_gone already absent; $n_kept_current still shipped (kept)."
@@ -164,11 +168,11 @@ done
 if [ "$ONLY_STALE" -eq 1 ] || [ "$n_modified" -gt 0 ]; then
   tmp="$MANIFEST.tmp.$$"
   : > "$tmp"
-  while IFS="$(printf '\t')" read -r path hash; do
+  while IFS="$(printf '\t')" read -r path _key hash; do
     [ -z "${path:-}" ] && continue
     [ -e "$path" ] || continue
     printf '%s\t%s\n' "$path" "$hash" >> "$tmp"
-  done < "$MANIFEST"
+  done < <(as_manifest_rows "$MANIFEST")
   mv -f "$tmp" "$MANIFEST" || as_die "cannot rewrite $MANIFEST"
   echo "manifest:    rewritten, $(grep -c . "$MANIFEST") entry(ies) remain"
 else
