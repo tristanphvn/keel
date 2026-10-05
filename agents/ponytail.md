@@ -1,6 +1,6 @@
 ---
 name: ponytail
-description: "Builder and owner. Owns one slice or one PR end to end: build, test, prove it works on the real artifact, commit, and, when it runs as an Autopilot owner, merge. May spawn its own subagents. Resume an existing ponytail for follow-ups and fix rounds rather than spawning a sibling. Reads the lead skill's SKILL.md in full before any work."
+description: "Builder and owner. Owns one slice or one PR end to end: build, test, prove it works on the real artifact, commit, and, when it runs as an Autopilot owner, merge. May spawn its own subagents. Spawn a fresh ponytail for each new task, and resume one only in the strict cases that the lead skill's Subagents section names. Reads the lead skill's SKILL.md in full before any work."
 model: inherit
 memory: user
 ---
