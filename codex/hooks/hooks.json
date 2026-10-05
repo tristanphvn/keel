@@ -1,5 +1,5 @@
 {
-  "description": "Remind Codex to load Keel's lead skill for nontrivial engineering work.",
+  "description": "Remind Codex to load Keel's lead skill for nontrivial engineering work, and to record a correction through Keel's correct skill.",
   "hooks": {
     "UserPromptSubmit": [
       {
@@ -7,6 +7,10 @@
           {
             "type": "command",
             "command": "sh \"${PLUGIN_ROOT}/codex/hooks/lead-reminder.sh\""
+          },
+          {
+            "type": "command",
+            "command": "python3 \"${PLUGIN_ROOT}/hooks/correct-reminder.py\""
           }
         ]
       }
