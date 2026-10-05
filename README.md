@@ -12,7 +12,7 @@ keel is an engineering loop for [Claude Code](https://code.claude.com) and Codex
 - **ponytail** ([Claude agent](./agents/ponytail.md)) owns one slice or pull request end to end: build, test, prove it on the real artifact, commit. In Codex, the lead gives that brief to a worker. A ponytail owner merges only under autopilot or when its brief says to land it.
 - **critic** ([Claude agent](./agents/critic.md)), generalized from pstack's comment-review persona, Comment Sicko, reviews a diff through one lens: comments by default, or correctness, security, simplicity, tests or user impact. Codex gives the same brief to an independent reviewer.
 
-keel keeps 49 of pstack's 50 skills (its 24 principles are among them) and all 23 playbooks. [Differences from pstack](#differences-from-pstack) lists what changed.
+keel keeps 50 of pstack's 51 skills (its 24 principles are among them) and all 23 playbooks. [Differences from pstack](#differences-from-pstack) lists what changed.
 
 ## install
 
@@ -65,7 +65,7 @@ For Claude Code:
 
 Subagents live only as long as their session. Before you close the terminal on running work, type `/bg` to move the session to the background. Start unattended work with `claude --bg`. keel runs subagents inside subagents, so don't cap `CLAUDE_CODE_MAX_CONCURRENT_SUBAGENTS` below its default of 20.
 
-New here? The [keel guide](./docs/guide/README.md), adapted from pstack's guide, walks through a first real task.
+New here? The [keel guide](./docs/guide/README.md), adapted from pstack's guide, walks through a first real task. Stuck, or unsure which skill fits? Ask [`/keel:help`](./skills/help/SKILL.md).
 
 ### models
 
@@ -163,6 +163,7 @@ the full rules and playbooks live in [`skills/lead/SKILL.md`](./skills/lead/SKIL
 | skill | use it when |
 |---|---|
 | [`/keel:lead`](./skills/lead/SKILL.md) | default entry point for any non-trivial task. the main session also loads it on its own. |
+| [`/keel:help`](./skills/help/SKILL.md) | you're new to keel, or unsure which skill, playbook, or principle fits. finds out what you're trying to do, answers that part, and hands you a prompt to type. also loads on its own when you ask how to use keel. |
 | [`/keel:how`](./skills/how/SKILL.md) | you want a walkthrough of how a subsystem works. |
 | [`/keel:why`](./skills/why/SKILL.md) | you want to know why something was built this way. discovers available MCPs at run time and queries each evidence category in parallel (source control, issue tracker, long-form docs, real-time chat, infra observability, error tracking, analytics warehouse). |
 | [`/keel:recall`](./skills/recall/SKILL.md) | you're starting or resuming work and want your recent context on a topic rebuilt from your own chat history and the shared record, handed back as a tight current-state brief. |
@@ -230,6 +231,7 @@ reflect:           /keel:reflect that took too long. capture what we learned so 
                    repeat it.
 show-me-your-work: /keel:show-me-your-work keep a decision trail i can review when i'm back.
 automate-me:       /keel:automate-me
+help:              /keel:help which skill should i use to review this branch?
 ```
 
 </details>
