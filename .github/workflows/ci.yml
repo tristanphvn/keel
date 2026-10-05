@@ -1,56 +1,39 @@
-name: ci
+name: CI
 
 on:
   push:
-    branches: ["**"]
+    branches: [main]
   pull_request:
 
 permissions:
   contents: read
 
 jobs:
-  validate:
-    name: schema and references
+  check:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - name: Install validation dependencies
-        # validate.sh SKIPS its YAML, contract and capability checks when these
-        # are missing, and a skip does not fail the run — so on a runner image
-        # that stopped shipping them, the job would still report success while
-        # silently checking less. Both are named here rather than relied upon.
-        run: python3 -m pip install --user pyyaml jsonschema
-      - run: bash scripts/validate.sh
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-  tests:
-    name: installer, adapters, contracts, routing, capabilities (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        # Windows is not optional: the link handling, path canonicalisation and
-        # the silent-copy hazard only exist there.
-        os: [ubuntu-latest, windows-latest]
-    defaults:
-      run:
-        shell: bash
-    steps:
-      - uses: actions/checkout@v4
-      - name: Install validation dependencies
-        # test_contracts.sh and test_capabilities.sh fail loudly without
-        # jsonschema rather than skipping, which is the intended behaviour — so
-        # the runner has to have it. An unavailable checker is never a pass.
-        run: python3 -m pip install --user jsonschema pyyaml
-      - run: bash tests/run.sh
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
 
-  shellcheck:
-    name: shellcheck
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Install shellcheck
-        run: sudo apt-get update && sudo apt-get install -y shellcheck
-      - name: Lint scripts
-        # -x follows `source` directives into lib/. Warnings are advisory;
-        # errors fail the build.
-        run: shellcheck -x -S error scripts/*.sh scripts/adapters/*.sh scripts/lib/*.sh tests/*.sh tests/lib/*.sh tests/probes/*.sh
+      - name: Validate the plugin
+        run: npx --yes @anthropic-ai/claude-code@2 plugin validate .
+
+      - name: Validate the Codex package
+        run: |
+          python3 codex/scripts/validate-package.py
+          sh -n codex/hooks/lead-reminder.sh
+          echo '{}' | sh codex/hooks/lead-reminder.sh | python3 -m json.tool > /dev/null
+
+      - name: Check the hooks
+        run: |
+          python3 -m py_compile hooks/git-guard.py
+          sh -n hooks/lead-reminder.sh
+          python3 hooks/test_git_guard.py
+          echo '{}' | sh hooks/lead-reminder.sh | python3 -m json.tool > /dev/null
+
+      - name: Test the playbook scripts
+        working-directory: skills/lead/scripts
+        run: |
+          bun install --frozen-lockfile
+          bun test orch watch-pr
