@@ -5,7 +5,12 @@ keel is a fork of pstack by Lauren Tan (poteto), MIT. keel first made its own Cl
 - Upstream: <https://github.com/cursor/plugins>, directory `pstack/`.
 - Base: `cursor/plugins@12d587d`, pstack 0.15.5.
 - The first commit in this repository is an unmodified copy of `pstack/` at the base. Everything after it is keel.
-- Ported from a later upstream commit: `skills/correct/` from `cursor/plugins@9511e60`, with both tables applied. keel adds its One correction section and the `hooks/correct-reminder.py` hook that triggers it.
+- Synced through `cursor/plugins@4e5b1cf` (pstack 0.15.10). Later upstream commits were ported by hand, one at a time, with both tables applied:
+  - `9511e60` adds `skills/correct/`. keel adds its One correction section and the `hooks/correct-reminder.py` hook that triggers it.
+  - `23e4138` (0.15.6) adds `skills/benchmark-checklist/` and `skills/principle-explain-the-number/`, fresh subagents by default, the hourly `/loop 1h` autopilot tick without `/goal`, `##` PR body headings, and the schema-first cast example. Its built-in PR tool paragraph is dropped, and its `technical-writing` source lines were already absent.
+  - `a586282` makes `architect` judge designs by how an agent contributor would change them, with four new red flags.
+  - `e43c7ee` replaces the perf-issue strategy families with the performance mantras.
+  - `4e5b1cf` adds `/poteto-help`, rewritten for keel as `skills/help/`. Its Cursor Custom Mode text in the README and guide is dropped, and so is its guide change for `typescript-best-practices`, which loads on its own in keel.
 
 Removed as Cursor-only or pstack branding: `.cursor-plugin/`, `assets/` (pstack's logo), `docs/guide/images/` (pstack's illustrations), `automations/benny/` and `skills/make-bot-ui/`. On an upstream sync, drop them again.
 
@@ -26,6 +31,7 @@ Every change after the first commit applies two tables and nothing else. The tra
 | `/<name>` | `/pstack:<name>` | `/keel:<name>` |
 | "pstack" naming this plugin in prose, `pstack/...` paths | "pstack", `<pstack>/...` | "keel", `<keel>/...` |
 | `docs/guide/02-poteto-mode.md` | same | `docs/guide/02-lead.md` |
+| `skills/poteto-help/`, `name: poteto-help`, `/poteto-help` | `/pstack:poteto-help` | `skills/help/`, `name: help`, `/keel:help`. Loads from the user's words like `lead`. Its content is rewritten for keel's install, skills, agents, hooks and Codex package |
 | interrogate reviewers on `generalPurpose` | `general-purpose` | `keel:critic` with the correctness lens, one per configured model. The `codex` lane is unchanged |
 | no-comments spawns Comment Sicko, which deletes comments itself | same, as `pstack:comment-sicko` | spawns `keel:critic` with the comments lens. critic only reports, and no-comments carries out the kills |
 | Orchestrate sub-coordinator as `generalPurpose` or `poteto-agent` | `general-purpose` or `pstack:poteto-agent` | `keel:ponytail`, which has the Agent tool |
@@ -73,8 +79,9 @@ The Claude Code column shows the port's names. The rename table above maps them 
 | `control-ui` | `anthropic-skills:chrome-browser`, `anthropic-skills:built-in-browser`, or `anthropic-skills:computer-use` when available, else Playwright via Bash |
 | `create-skill` | `anthropic-skills:skill-creator` when available, else the Authoring a skill playbook |
 | Cursor's built-in `/babysit` | Dropped. pstack's Babysit playbook is the only one |
-| `/goal` | The objective becomes the first todo item and is re-read at each `/loop` tick. The multi-phase plan template also names `/goal` where a Claude Code build has it, because `check-plan.mjs` requires that marker |
-| `/loop` in dynamic mode, cloud-sleeper wake chain | `/loop` with no interval (self-paced), or `/loop 30m <prompt>` for audit ticks |
+| `/goal` | Dropped. Upstream removed it in 0.15.6, and the audit tick re-reads only the playbook |
+| `/loop` in dynamic mode, `/loop 1h` audit ticks | `/loop` with no interval (self-paced), or `/loop 1h <prompt>` for audit ticks |
+| The run's built-in PR tool, Custom Modes (Option+Enter on a skill) | Dropped. keel opens PRs with `gh`, and `hooks/lead-reminder.sh` keeps the lead on across turns |
 | Cursor cloud agent, `environment: "cloud"`, `cloud_base_branch` | A background subagent with `isolation: "worktree"`, or a separate `claude --worktree` session |
 | Origin forge and `origin pr ...` | `gh` only |
 | Bugbot | Automated PR review bots (Bugbot, Claude Code review, CodeRabbit, etc.). `references/bugbot-triage.md` keeps its filename |
@@ -97,7 +104,7 @@ The Claude Code column shows the port's names. The rename table above maps them 
 
 - `worktree-audit.sh` reads chat transcripts from `~/.cursor/projects/<slug>/agent-transcripts`, so its `LAST_CHAT` column is always `-` on Claude Code. The Worktree cleanup playbook tells the agent to scan `${CLAUDE_CONFIG_DIR:-$HOME/.claude}/projects/` itself and to treat every `safe` row as `verify-recent-chat` until that scan clears it.
 - `watch-pr/github.ts` counts review passes only for Bugbot, detected by the author `bugbot` or the `cursor` app with `CURSOR_AUTOMATION_ID` markers. Other review bots show no pass count. The Babysit playbook counts their passes from review history.
-- `check-plan.mjs` requires the literal markers `/goal` and `git show origin/main:` in a plan's Program checklist. The plan template keeps both.
+- `check-plan.mjs` requires the literal markers `git show origin/main:` and `/loop 1h` in a plan's Program checklist. The plan template keeps both.
 - The package was named `@cursor-skill/poteto-mode-tools`; keel renamed it `keel-lead-tools`.
 
 ## Sync with upstream
@@ -105,7 +112,7 @@ The Claude Code column shows the port's names. The rename table above maps them 
 1. See what changed since the base.
 
    ```bash
-   bin/upstream-diff.sh            # stat of pstack/ from 12d587d to upstream main
+   bin/upstream-diff.sh            # stat of pstack/ from the last synced commit to upstream main
    KEEP=1 bin/upstream-diff.sh     # same, and keep the clone to read full diffs
    ```
 
@@ -140,4 +147,4 @@ The Claude Code column shows the port's names. The rename table above maps them 
    claude --plugin-dir . plugin details keel
    ```
 
-Deliberate residual-scan hits. The first scan prints the model mapping table and the differences list in `README.md`, the `/goal` line in the multi-phase plan template, and the Cursor-path lines inside the unported scripts. The second prints the credit line in `README.md` and the `poteto-mode` names inside the bun scripts under `skills/lead/scripts/`.
+Deliberate residual-scan hits. The first scan prints the model mapping table and the differences list in `README.md`, and the Cursor-path lines inside the unported scripts. The second prints the credit line in `README.md` and the `poteto-mode` names inside the bun scripts under `skills/lead/scripts/`.

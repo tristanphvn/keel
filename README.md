@@ -12,7 +12,7 @@ keel is an engineering loop for [Claude Code](https://code.claude.com) and Codex
 - **ponytail** ([Claude agent](./agents/ponytail.md)) owns one slice or pull request end to end: build, test, prove it on the real artifact, commit. In Codex, the lead gives that brief to a worker. A ponytail owner merges only under autopilot or when its brief says to land it.
 - **critic** ([Claude agent](./agents/critic.md)), generalized from pstack's comment-review persona, Comment Sicko, reviews a diff through one lens: comments by default, or correctness, security, simplicity, tests or user impact. Codex gives the same brief to an independent reviewer.
 
-keel keeps 46 of pstack's 47 skills (its 23 principles are among them) and all 23 playbooks. [Differences from pstack](#differences-from-pstack) lists what changed.
+keel keeps 50 of pstack's 51 skills (its 24 principles are among them) and all 23 playbooks. [Differences from pstack](#differences-from-pstack) lists what changed.
 
 ## install
 
@@ -27,7 +27,7 @@ claude plugin install keel@keel
 
 To try it for one session without installing, clone the repository and run `claude --plugin-dir ./keel`.
 
-Skills run as `/keel:<name>`, and the agents are `keel:ponytail` and `keel:critic`. The main session loads `lead` on its own when a task needs it, or you type `/keel:lead`. The other keel skills are user-invoked, so `lead` reads them by path when a step needs one.
+Skills run as `/keel:<name>`, and the agents are `keel:ponytail` and `keel:critic`. The main session loads `lead` on its own when a task needs it, or you type `/keel:lead`. It also loads `help` when you ask how to use keel, and `typescript-best-practices` on `.ts` and `.tsx` files. The other keel skills are user-invoked, so `lead` reads them by path when a step needs one.
 
 ### Codex
 
@@ -65,7 +65,7 @@ For Claude Code:
 
 Subagents live only as long as their session. Before you close the terminal on running work, type `/bg` to move the session to the background. Start unattended work with `claude --bg`. keel runs subagents inside subagents, so don't cap `CLAUDE_CODE_MAX_CONCURRENT_SUBAGENTS` below its default of 20.
 
-New here? The [keel guide](./docs/guide/README.md), adapted from pstack's guide, walks through a first real task.
+New here? The [keel guide](./docs/guide/README.md), adapted from pstack's guide, walks through a first real task. Stuck, or unsure which skill fits? Ask [`/keel:help`](./skills/help/SKILL.md).
 
 ### models
 
@@ -163,6 +163,7 @@ the full rules and playbooks live in [`skills/lead/SKILL.md`](./skills/lead/SKIL
 | skill | use it when |
 |---|---|
 | [`/keel:lead`](./skills/lead/SKILL.md) | default entry point for any non-trivial task. the main session also loads it on its own. |
+| [`/keel:help`](./skills/help/SKILL.md) | you're new to keel, or unsure which skill, playbook, or principle fits. finds out what you're trying to do, answers that part, and hands you a prompt to type. also loads on its own when you ask how to use keel. |
 | [`/keel:how`](./skills/how/SKILL.md) | you want a walkthrough of how a subsystem works. |
 | [`/keel:why`](./skills/why/SKILL.md) | you want to know why something was built this way. discovers available MCPs at run time and queries each evidence category in parallel (source control, issue tracker, long-form docs, real-time chat, infra observability, error tracking, analytics warehouse). |
 | [`/keel:recall`](./skills/recall/SKILL.md) | you're starting or resuming work and want your recent context on a topic rebuilt from your own chat history and the shared record, handed back as a tight current-state brief. |
@@ -177,6 +178,7 @@ the full rules and playbooks live in [`skills/lead/SKILL.md`](./skills/lead/SKIL
 | [`/keel:reflect`](./skills/reflect/SKILL.md) | a long task landed and you want the recipe captured as a skill edit. |
 | [`/keel:teach`](./skills/teach/SKILL.md) | you want to actually understand a change or subsystem, not just have it summarized. runs how + why and weaves one plain explanation, built up diagram by diagram. |
 | [`/keel:tdd`](./skills/tdd/SKILL.md) | you're fixing a bug and there's a cheap local test path. write the failing test first, then the fix. |
+| [`/keel:benchmark-checklist`](./skills/benchmark-checklist/SKILL.md) | you ran a benchmark or measured a speedup or regression. vets the number (limiter, tuning, errors, repeat runs, end-to-end relevance) before you report or act on it. |
 | [`/keel:no-comments`](./skills/no-comments/SKILL.md) | strip comments before review; spawns critic with the comments lens, carries out accepted kills, fixes accepted findings, offers encodings for claimed constraints. |
 | [`/keel:typescript-best-practices`](./skills/typescript-best-practices/SKILL.md) | you're reading or editing typescript. grounds the type-system-discipline principle in syntax. |
 | [`/keel:figure-it-out`](./skills/figure-it-out/SKILL.md) | no bundled playbook fits. designs a rigorous, auditable playbook for the task. |
@@ -229,6 +231,7 @@ reflect:           /keel:reflect that took too long. capture what we learned so 
                    repeat it.
 show-me-your-work: /keel:show-me-your-work keep a decision trail i can review when i'm back.
 automate-me:       /keel:automate-me
+help:              /keel:help which skill should i use to review this branch?
 ```
 
 </details>
@@ -241,10 +244,10 @@ The lead delegates code-writing to [`keel:ponytail`](./agents/ponytail.md). pony
 
 ## principles
 
-twenty-three short skills, one principle each. `lead` indexes them inline and reads that index at task start. the standalone files are there so other skills can reference a principle by name, and so the index can point at the full rule for each.
+twenty-four short skills, one principle each. `lead` indexes them inline and reads that index at task start. the standalone files are there so other skills can reference a principle by name, and so the index can point at the full rule for each.
 
 <details>
-<summary>all twenty-three principles</summary>
+<summary>all twenty-four principles</summary>
 
 | principle | group | rule |
 |---|---|---|
@@ -268,6 +271,7 @@ twenty-three short skills, one principle each. `lead` indexes them inline and re
 | [fix-root-causes](./skills/principle-fix-root-causes/SKILL.md) | verification | Trace each symptom to its root cause and fix it there; reproduce first, ask why until you reach it, resist nil-check guards that silence crashes. |
 | [sequence-verifiable-units](./skills/principle-sequence-verifiable-units/SKILL.md) | verification | Apply to multi-step work (sweeps, migrations, runs of similar edits) and to how you stack commits and PRs. Break work into small units that each end in a verifiable state, check each before the next, and order delivery so the sequence proves itself to a reviewer. |
 | [test-behavior-not-implementation](./skills/principle-test-behavior-not-implementation/SKILL.md) | verification | Apply when you write, change, or keep a test. Call the code the way its users do and assert the result they observe against a literal expected value. If the test would still pass when every imported function returns undefined, rewrite the assertion or delete the test. |
+| [explain-the-number](./skills/principle-explain-the-number/SKILL.md) | verification | Apply before you trust, report, or act on a number you measured: a speedup, a regression, a throughput, a latency, or an eval result. Find what limits it, and rule out that it measured something other than the work you think. |
 | [guard-the-context-window](./skills/principle-guard-the-context-window/SKILL.md) | delegation | Route bulk to subagents; keep summaries in the main thread, not raw payloads. |
 | [never-block-on-the-human](./skills/principle-never-block-on-the-human/SKILL.md) | delegation | Proceed, present the result, let the human course-correct after the fact; reserve confirmation for irreversible actions. |
 | [encode-lessons-in-structure](./skills/principle-encode-lessons-in-structure/SKILL.md) | meta | Encode the rule as a lint, metadata flag, runtime check, or script instead of more text. |
@@ -279,7 +283,7 @@ twenty-three short skills, one principle each. `lead` indexes them inline and re
 keel changes how pstack runs, not what it teaches.
 
 - **Platform.** Cursor's tools become their Claude Code equivalents. The Task tool becomes the Agent tool, Cursor cloud agents become background subagents in worktrees, and pull request operations go through `gh` (the Orchestrate playbook also uses Graphite, `gt`, for stacks). cursor-team-kit's slop and control skills become Claude Code's `/simplify`, Bash (tmux for interactive TUIs) and the browser skills, and Cursor's `create-skill` becomes `anthropic-skills:skill-creator`.
-- **Names.** `poteto-mode`, `poteto-agent`, Comment Sicko and `setup-pstack` become `lead`, `ponytail`, `critic` and `setup`.
+- **Names.** `poteto-mode`, `poteto-agent`, Comment Sicko, `setup-pstack` and `poteto-help` become `lead`, `ponytail`, `critic`, `setup` and `help`.
 - **Models.** Claude Code has no grok. Review panels use Opus, Fable and Sonnet, and `interrogate` adds a Codex lane.
 - **Shape.** The lead is a skill loaded by the main session, because running a session as an agent replaces Claude Code's own instructions. critic is read-only, ponytail keeps memory, and keel adds the git guard and the lead reminder.
 - **Removed.** The benny Slack automation pack, the `make-bot-ui` skill, Cursor's plugin manifest, and pstack's logo and illustrations. They are Cursor-only or pstack's own branding.
@@ -302,7 +306,7 @@ pstack's Cursor model rule file does not carry over. Run `/keel:setup` once in C
 
 ## credits and license
 
-- **pstack** by Lauren Tan ([poteto](https://x.com/poteto)), from [cursor/plugins](https://github.com/cursor/plugins/tree/main/pstack) at commit `12d587d` (pstack 0.15.5), MIT. keel's skills, playbooks, principles, references, scripts, guide and both agents are adapted from it. `skills/correct` is ported from a later commit, `9511e60`.
+- **pstack** by Lauren Tan ([poteto](https://x.com/poteto)), from [cursor/plugins](https://github.com/cursor/plugins/tree/main/pstack) at commit `12d587d` (pstack 0.15.5), MIT. keel's skills, playbooks, principles, references, scripts, guide and both agents are adapted from it. Later commits through `4e5b1cf` (pstack 0.15.10) are ported as [`UPSTREAM.md`](./UPSTREAM.md) records.
 - **Git guardrails** by Matt Pocock, from [mattpocock/skills](https://github.com/mattpocock/skills), MIT. `hooks/git-guard.py` is adapted from it.
 - **keel** by [alexnthnz](https://github.com/alexnthnz), from [alexnthnz/keel](https://github.com/alexnthnz/keel) at commit `72ef257` (keel 0.3.1), MIT.
 - **This fork's changes** by [tristanphvn](https://github.com/tristanphvn), MIT.
