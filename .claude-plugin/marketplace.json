@@ -3,8 +3,8 @@
   "name": "keel",
   "description": "keel: an engineering loop for Claude Code and Codex, adapted from pstack by Lauren Tan.",
   "owner": {
-    "name": "alexnthnz",
-    "url": "https://github.com/alexnthnz"
+    "name": "TriPham9001",
+    "url": "https://github.com/TriPham9001"
   },
   "plugins": [
     {
@@ -13,7 +13,7 @@
       "source": "./",
       "version": "0.3.1",
       "author": {
-        "name": "alexnthnz"
+        "name": "TriPham9001"
       },
       "license": "MIT",
       "category": "development"
