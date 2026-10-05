@@ -17,7 +17,10 @@ MARKDOWN_LINK = re.compile(r"\]\(([^)\s]+)")
 URL_SCHEME = re.compile(r"[A-Za-z][A-Za-z0-9+.-]*:")
 CODEX_HOOKS = "./codex/hooks/hooks.json"
 REMINDER_HOOKS = {
-    "UserPromptSubmit": [{"hooks": [{"type": "command", "command": 'sh "${PLUGIN_ROOT}/codex/hooks/lead-reminder.sh"'}]}],
+    "UserPromptSubmit": [{"hooks": [
+        {"type": "command", "command": 'sh "${PLUGIN_ROOT}/codex/hooks/lead-reminder.sh"'},
+        {"type": "command", "command": 'python3 "${PLUGIN_ROOT}/hooks/correct-reminder.py"'},
+    ]}],
 }
 
 
@@ -102,8 +105,9 @@ def main() -> int:
         errors.append(f".codex-plugin/plugin.json: hooks must be {CODEX_HOOKS}")
     if read_json("codex/hooks/hooks.json", errors).get("hooks") != REMINDER_HOOKS:
         errors.append(f"codex/hooks/hooks.json: \"hooks\" must be exactly {json.dumps(REMINDER_HOOKS)}")
-    if not (ROOT / "codex/hooks/lead-reminder.sh").is_file():
-        errors.append("codex/hooks/lead-reminder.sh: missing")
+    for hook in ("codex/hooks/lead-reminder.sh", "hooks/correct-reminder.py"):
+        if not (ROOT / hook).is_file():
+            errors.append(f"{hook}: missing")
 
     if errors:
         for error in errors:
