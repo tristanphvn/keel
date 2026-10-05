@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
-# Show how upstream pstack changed since this port's base commit.
+# Show how upstream pstack changed since the last commit keel synced.
 # Sparse, blob-less clone of cursor/plugins into a temp dir, then
-# `git diff --stat` of pstack/ between the base commit and upstream.
+# `git diff --stat` of pstack/ between that commit and upstream.
 #
 # Usage: bin/upstream-diff.sh [upstream-ref]   (default: main)
 #        KEEP=1 bin/upstream-diff.sh           (keep the clone to read full diffs)
 set -euo pipefail
 
-base=12d587d
+base=4e5b1cf
 ref="${1:-main}"
 repo=https://github.com/cursor/plugins.git
 tmp="$(mktemp -d "${TMPDIR:-/tmp}/pstack-upstream.XXXXXX")"

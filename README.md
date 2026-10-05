@@ -283,7 +283,7 @@ twenty-four short skills, one principle each. `lead` indexes them inline and rea
 keel changes how pstack runs, not what it teaches.
 
 - **Platform.** Cursor's tools become their Claude Code equivalents. The Task tool becomes the Agent tool, Cursor cloud agents become background subagents in worktrees, and pull request operations go through `gh` (the Orchestrate playbook also uses Graphite, `gt`, for stacks). cursor-team-kit's slop and control skills become Claude Code's `/simplify`, Bash (tmux for interactive TUIs) and the browser skills, and Cursor's `create-skill` becomes `anthropic-skills:skill-creator`.
-- **Names.** `poteto-mode`, `poteto-agent`, Comment Sicko and `setup-pstack` become `lead`, `ponytail`, `critic` and `setup`.
+- **Names.** `poteto-mode`, `poteto-agent`, Comment Sicko, `setup-pstack` and `poteto-help` become `lead`, `ponytail`, `critic`, `setup` and `help`.
 - **Models.** Claude Code has no grok. Review panels use Opus, Fable and Sonnet, and `interrogate` adds a Codex lane.
 - **Shape.** The lead is a skill loaded by the main session, because running a session as an agent replaces Claude Code's own instructions. critic is read-only, ponytail keeps memory, and keel adds the git guard and the lead reminder.
 - **Removed.** The benny Slack automation pack, the `make-bot-ui` skill, Cursor's plugin manifest, and pstack's logo and illustrations. They are Cursor-only or pstack's own branding.
@@ -306,7 +306,7 @@ pstack's Cursor model rule file does not carry over. Run `/keel:setup` once in C
 
 ## credits and license
 
-- **pstack** by Lauren Tan ([poteto](https://x.com/poteto)), from [cursor/plugins](https://github.com/cursor/plugins/tree/main/pstack) at commit `12d587d` (pstack 0.15.5), MIT. keel's skills, playbooks, principles, references, scripts, guide and both agents are adapted from it. `skills/correct` is ported from a later commit, `9511e60`.
+- **pstack** by Lauren Tan ([poteto](https://x.com/poteto)), from [cursor/plugins](https://github.com/cursor/plugins/tree/main/pstack) at commit `12d587d` (pstack 0.15.5), MIT. keel's skills, playbooks, principles, references, scripts, guide and both agents are adapted from it. Later commits through `4e5b1cf` (pstack 0.15.10) are ported as [`UPSTREAM.md`](./UPSTREAM.md) records.
 - **Git guardrails** by Matt Pocock, from [mattpocock/skills](https://github.com/mattpocock/skills), MIT. `hooks/git-guard.py` is adapted from it.
 - **keel** by [alexnthnz](https://github.com/alexnthnz), from [alexnthnz/keel](https://github.com/alexnthnz/keel) at commit `72ef257` (keel 0.3.1), MIT.
 - **This fork's changes** by [tristanphvn](https://github.com/tristanphvn), MIT.
