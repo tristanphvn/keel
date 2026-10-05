@@ -27,7 +27,7 @@ claude plugin install keel@keel
 
 To try it for one session without installing, clone the repository and run `claude --plugin-dir ./keel`.
 
-Skills run as `/keel:<name>`, and the agents are `keel:ponytail` and `keel:critic`. The main session loads `lead` on its own when a task needs it, or you type `/keel:lead`. The other keel skills are user-invoked, so `lead` reads them by path when a step needs one.
+Skills run as `/keel:<name>`, and the agents are `keel:ponytail` and `keel:critic`. The main session loads `lead` on its own when a task needs it, or you type `/keel:lead`. It also loads `help` when you ask how to use keel, and `typescript-best-practices` on `.ts` and `.tsx` files. The other keel skills are user-invoked, so `lead` reads them by path when a step needs one.
 
 ### Codex
 
