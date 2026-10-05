@@ -21,7 +21,7 @@ keel keeps 46 of pstack's 47 skills (its 23 principles are among them) and all 2
 keel needs Claude Code, `git`, the GitHub CLI `gh` (signed in), `python3` for the git guard and `bun` for the playbook scripts. Optional: the Codex CLI for the cross-model review lane, `tmux` for driving interactive terminal apps, and Graphite (`gt`) for the Orchestrate playbook's stacks.
 
 ```bash
-claude plugin marketplace add TriPham9001/keel
+claude plugin marketplace add tristanphvn/keel
 claude plugin install keel@keel
 ```
 
@@ -34,7 +34,7 @@ Skills run as `/keel:<name>`, and the agents are `keel:ponytail` and `keel:criti
 Codex needs its CLI with plugin support, `git`, and `bun` for Keel's playbook scripts. Playbooks that use GitHub also need the GitHub CLI `gh` signed in. Add the keel marketplace, then install the plugin:
 
 ```bash
-codex plugin marketplace add TriPham9001/keel
+codex plugin marketplace add tristanphvn/keel
 codex plugin add keel@keel
 ```
 
@@ -303,6 +303,6 @@ pstack's Cursor model rule file does not carry over. Run `/keel:setup` once in C
 - **pstack** by Lauren Tan ([poteto](https://x.com/poteto)), from [cursor/plugins](https://github.com/cursor/plugins/tree/main/pstack) at commit `12d587d` (pstack 0.15.5), MIT. keel's skills, playbooks, principles, references, scripts, guide and both agents are adapted from it.
 - **Git guardrails** by Matt Pocock, from [mattpocock/skills](https://github.com/mattpocock/skills), MIT. `hooks/git-guard.py` is adapted from it.
 - **keel** by [alexnthnz](https://github.com/alexnthnz), from [alexnthnz/keel](https://github.com/alexnthnz/keel) at commit `72ef257` (keel 0.3.1), MIT.
-- **This fork's changes** by [TriPham9001](https://github.com/TriPham9001), MIT.
+- **This fork's changes** by [tristanphvn](https://github.com/tristanphvn), MIT.
 
 [`LICENSE`](./LICENSE) keeps Lauren Tan's copyright notice alongside keel's, and [`THIRD_PARTY_NOTICES.md`](./THIRD_PARTY_NOTICES.md) reproduces each upstream license. keel is not affiliated with or endorsed by Lauren Tan, Matt Pocock, Cursor or Anthropic.

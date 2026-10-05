@@ -7,7 +7,7 @@ Security fixes go into the latest release of keel. Update with `claude plugin up
 ## Reporting a vulnerability
 
 Please report security problems privately through
-[GitHub's private vulnerability reporting](https://github.com/TriPham9001/keel/security/advisories/new),
+[GitHub's private vulnerability reporting](https://github.com/tristanphvn/keel/security/advisories/new),
 not in a public issue.
 
 Include what you found, how to reproduce it, and which keel and Claude Code versions you used. You will get a reply
