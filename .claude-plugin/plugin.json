@@ -3,8 +3,8 @@
   "version": "0.3.1",
   "description": "Engineering loop for Claude Code and Codex: the main session leads, ponytail builds, critic reviews. Adapted from pstack by Lauren Tan.",
   "author": {
-    "name": "TriPham9001",
-    "url": "https://github.com/TriPham9001"
+    "name": "tristanphvn",
+    "url": "https://github.com/tristanphvn"
   },
   "license": "MIT",
   "keywords": [
@@ -18,6 +18,6 @@
     "code-review",
     "unslop"
   ],
-  "homepage": "https://github.com/TriPham9001/keel",
-  "repository": "https://github.com/TriPham9001/keel"
+  "homepage": "https://github.com/tristanphvn/keel",
+  "repository": "https://github.com/tristanphvn/keel"
 }
