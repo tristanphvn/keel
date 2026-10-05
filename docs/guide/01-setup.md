@@ -7,14 +7,14 @@ In this page you install the plugin, pick which models keel uses, and run your f
 Add the repository as a plugin marketplace and install keel from it:
 
 ```bash
-claude plugin marketplace add alexnthnz/keel
+claude plugin marketplace add TriPham9001/keel
 claude plugin install keel@keel
 ```
 
 To try keel for one session without installing, clone the repository and start Claude Code with the plugin directory:
 
 ```bash
-git clone https://github.com/alexnthnz/keel
+git clone https://github.com/TriPham9001/keel
 claude --plugin-dir ./keel
 ```
 
