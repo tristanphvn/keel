@@ -1,5 +1,5 @@
 {
-  "description": "keel hooks: the git guard (denies force-push, protected-branch deletion on the remote, reset --hard, clean -f, whole-tree discards, filter-branch, and filter-repo, and allows a lease onto a named branch that is not protected; AI attribution trailers only with KEEL_BLOCK_AI_TRAILERS=1) and the lead reminder that keeps the keel:lead method sticky across turns, and the correct reminder that sends a prompt reading as a correction through the correct skill.",
+  "description": "keel hooks: the git guard (denies force-push, protected-branch deletion on the remote, reset --hard, clean -f, whole-tree discards, filter-branch, and filter-repo, and allows a lease onto a named branch that is not protected; AI attribution trailers only with KEEL_BLOCK_AI_TRAILERS=1) and the lead reminder that keeps the keel:lead method sticky across turns, and the correct reminder that sends a prompt reading as a correction through the correct skill, and the think hooks that make every turn dig before answering and review once before it ends.",
   "hooks": {
     "PreToolUse": [
       {
@@ -22,6 +22,20 @@
           {
             "type": "command",
             "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/correct-reminder.py\""
+          },
+          {
+            "type": "command",
+            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/think.py\" start"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/think.py\" stop"
           }
         ]
       }
