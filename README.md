@@ -50,10 +50,11 @@ To allow git writes for a whole session, start or resume Codex with `--add-dir` 
 
 Codex asks you to review the lead reminder in `/hooks` before it runs. The Codex plugin does not load Claude Code's Git guard. That guard is a best-effort check of the command text, so do not rely on it as a Codex safety check.
 
-For Claude Code, keel ships two hooks:
+For Claude Code, keel ships three hooks:
 
 - [`hooks/git-guard.py`](./hooks/git-guard.py), adapted from Matt Pocock's [git guardrails](https://github.com/mattpocock/skills) (MIT), blocks force-pushes, deleting a protected branch on the remote, `reset --hard`, `clean -f`, `filter-branch`, `filter-repo`, and commands that discard the whole working tree, such as `git checkout .` and `git checkout -f`. The protected branches are `main`, `master`, `trunk`, `develop` and `release*`. The one exception is `--force-with-lease` onto a branch that the command names and that is not protected, so an owner can publish its own rebased branch with `git push --force-with-lease origin <branch>`. The guard catches the common forms an agent types by accident, including commands wrapped in `bash -c`, `eval`, `$(...)`, subshells, heredocs fed to a shell, launchers such as `sudo` or `xargs`, and abbreviated options. It skips quoted text, so a commit message that mentions `git push --force` still runs, but it blocks an unquoted mention such as `echo git reset --hard`. It is not a sandbox. Deliberate constructions get past it, such as brace or glob expansion in the command name, git-core helper paths, plumbing commands, inline `-c` config, and pathspec magic. A git alias, a script file, a heredoc piped into a shell, a flag built at run time, and a command string passed to `ssh` or another language also get past it. To protect a branch, turn on your forge's branch protection. On GitHub, add a ruleset that blocks force pushes and deletion. Set `KEEL_BLOCK_AI_TRAILERS=1` to also block commits whose message carries an AI attribution trailer.
 - [`hooks/lead-reminder.sh`](./hooks/lead-reminder.sh) re-injects one line on every prompt, as pstack's sticky reminder does in Cursor: a new task that needs rigor loads `keel:lead`. Set `KEEL_REMINDER=off` to silence it.
+- [`hooks/correct-reminder.py`](./hooks/correct-reminder.py) watches each prompt for a correction, in Vietnamese or English ("sai rồi", "lại lỗi", "that's wrong", "I told you"). On a match it tells the lead to fix the mistake and record it through [`/keel:correct`](./skills/correct/SKILL.md) in the same turn. A repo rule goes into that repo's `CLAUDE.md` rule table, raised to a lint or test on a repeat. A lesson about working with you goes into a `feedback` memory. The patterns live in one table at the top of the file. Set `KEEL_CORRECT=off` to silence it.
 
 ## get started
 
@@ -172,6 +173,7 @@ the full rules and playbooks live in [`skills/lead/SKILL.md`](./skills/lead/SKIL
 | [`/keel:interrogate`](./skills/interrogate/SKILL.md) | you have a diff and want several different models to try to break it, including a strict code-quality lens. |
 | [`/keel:automate-me`](./skills/automate-me/SKILL.md) | you want your own `-mode` skill, drafted from how you've actually worked. |
 | [`/keel:setup`](./skills/setup/SKILL.md) | you want to pick which models keel uses per role. checks for the codex cli and writes `${CLAUDE_CONFIG_DIR:-$HOME/.claude}/keel-models.md`. |
+| [`/keel:correct`](./skills/correct/SKILL.md) | you keep correcting agents for the same mistakes. mines history for mistake classes, fixes each at the highest level that works (architecture, then types, lint, and ci, then tests, with docs last), and keeps a table in `CLAUDE.md` pairing each rule with what enforces it. the correct-reminder hook runs its one-correction path whenever you correct the agent. |
 | [`/keel:reflect`](./skills/reflect/SKILL.md) | a long task landed and you want the recipe captured as a skill edit. |
 | [`/keel:teach`](./skills/teach/SKILL.md) | you want to actually understand a change or subsystem, not just have it summarized. runs how + why and weaves one plain explanation, built up diagram by diagram. |
 | [`/keel:tdd`](./skills/tdd/SKILL.md) | you're fixing a bug and there's a cheap local test path. write the failing test first, then the fix. |
@@ -300,7 +302,7 @@ pstack's Cursor model rule file does not carry over. Run `/keel:setup` once in C
 
 ## credits and license
 
-- **pstack** by Lauren Tan ([poteto](https://x.com/poteto)), from [cursor/plugins](https://github.com/cursor/plugins/tree/main/pstack) at commit `12d587d` (pstack 0.15.5), MIT. keel's skills, playbooks, principles, references, scripts, guide and both agents are adapted from it.
+- **pstack** by Lauren Tan ([poteto](https://x.com/poteto)), from [cursor/plugins](https://github.com/cursor/plugins/tree/main/pstack) at commit `12d587d` (pstack 0.15.5), MIT. keel's skills, playbooks, principles, references, scripts, guide and both agents are adapted from it. `skills/correct` is ported from a later commit, `9511e60`.
 - **Git guardrails** by Matt Pocock, from [mattpocock/skills](https://github.com/mattpocock/skills), MIT. `hooks/git-guard.py` is adapted from it.
 - **keel** by [alexnthnz](https://github.com/alexnthnz), from [alexnthnz/keel](https://github.com/alexnthnz/keel) at commit `72ef257` (keel 0.3.1), MIT.
 - **This fork's changes** by [tristanphvn](https://github.com/tristanphvn), MIT.

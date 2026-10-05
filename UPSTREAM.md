@@ -5,6 +5,7 @@ keel is a fork of pstack by Lauren Tan (poteto), MIT. keel first made its own Cl
 - Upstream: <https://github.com/cursor/plugins>, directory `pstack/`.
 - Base: `cursor/plugins@12d587d`, pstack 0.15.5.
 - The first commit in this repository is an unmodified copy of `pstack/` at the base. Everything after it is keel.
+- Ported from a later upstream commit: `skills/correct/` from `cursor/plugins@9511e60`, with both tables applied. keel adds its One correction section and the `hooks/correct-reminder.py` hook that triggers it.
 
 Removed as Cursor-only or pstack branding: `.cursor-plugin/`, `assets/` (pstack's logo), `docs/guide/images/` (pstack's illustrations), `automations/benny/` and `skills/make-bot-ui/`. On an upstream sync, drop them again.
 
