@@ -1,7 +1,0 @@
-# These files get copied verbatim into $AGENT_HOME. Keep LF in the working tree on
-# every platform so a checkout is byte-identical to what was committed and the
-# install/sync scripts do not report phantom drift on Windows.
-* text=auto eol=lf
-
-# Shell scripts must stay LF to run under Git Bash / WSL.
-*.sh text eol=lf
