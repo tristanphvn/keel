@@ -29,7 +29,8 @@ class ThinkTest(unittest.TestCase):
         code, out = run("stop", event(hook_event_name="Stop", stop_hook_active=False))
         decision = json.loads(out)
         self.assertEqual((code, decision["decision"]), (0, "block"))
-        self.assertIn("review before you send", decision["reason"])
+        self.assertIn("review the answer you just gave", decision["reason"])
+        self.assertIn("restates the key result", decision["reason"])
 
     def test_stop_lets_the_review_continuation_end(self):
         self.assertEqual(run("stop", event(hook_event_name="Stop", stop_hook_active=True)), (0, ""))
@@ -38,6 +39,13 @@ class ThinkTest(unittest.TestCase):
         for payload in (event(hook_event_name="Stop"), "not json", "[]", '{"stop_hook_active": "false"}'):
             with self.subTest(payload=payload):
                 self.assertEqual(run("stop", payload), (0, ""))
+
+    def test_stop_warns_when_the_loop_flag_is_missing(self):
+        result = subprocess.run(
+            [sys.executable, HOOK, "stop"], input=event(hook_event_name="Stop"), capture_output=True, text=True, encoding="utf-8",
+        )
+        self.assertEqual((result.returncode, result.stdout), (0, ""))
+        self.assertIn("no boolean stop_hook_active", result.stderr)
 
     def test_off_switch_silences_both_modes(self):
         self.assertEqual(run("start", event(prompt="x"), KEEL_THINK="off"), (0, ""))

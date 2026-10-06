@@ -7,7 +7,8 @@
 import json, os, sys
 
 DIG = (
-    "keel think: before you answer, dig. "
+    "keel think: before you answer, dig, scaled to the request. "
+    "An acknowledgement or small talk gets a direct reply, with no tool calls. "
     "1. Restate what the operator actually needs, including the goal behind the literal ask. "
     "2. Gather evidence from the real source (files, commands, docs, tool output) instead of answering from memory. "
     "3. Weigh at least two approaches and pick one for a stated reason. "
@@ -17,14 +18,18 @@ DIG = (
 )
 
 REVIEW = (
-    "keel think: review before you send. Check your last answer against each point: "
+    "keel think: review the answer you just gave. Check it against each point: "
     "1. Does it answer what the operator actually needs, not only the literal words? "
     "2. Is every claim backed by evidence you gathered this turn, or labeled as inferred or a guess? "
     "3. Did you reach the root cause, or stop at a symptom? "
     "4. Is there a better approach, a missed edge case, or a risk you did not state? "
-    "5. Is there a check you could still run instead of asking the operator to run it? "
-    "If something fails, fix it now: run the check, dig further, and send the corrected answer in full. "
-    "If everything holds, end with one line naming what you verified. Do not repeat an unchanged answer."
+    "5. Is there a quick read-only check you could still run instead of asking the operator to run it? "
+    "This review covers only that answer. Do not start new work, do not act past a stop or approval gate the "
+    "operator set, and do not poll or redo work that running subagents own. A turn that waits on the operator or "
+    "on subagents only confirms its state. "
+    "If something fails, fix it now and send the corrected answer in full. "
+    "If everything holds, end with one line that restates the key result and names what you verified, so a reader "
+    "who sees only this last message still has the answer. Do not repeat the rest of an unchanged answer."
 )
 
 
@@ -42,9 +47,12 @@ def start():
 
 
 def stop():
-    if read_event().get("stop_hook_active") is not False:
-        return None
-    return {"decision": "block", "reason": REVIEW}
+    active = read_event().get("stop_hook_active")
+    if active is False:
+        return {"decision": "block", "reason": REVIEW}
+    if active is not True:
+        print("keel think: Stop event has no boolean stop_hook_active; skipped the review.", file=sys.stderr)
+    return None
 
 
 MODES = {"start": start, "stop": stop}
