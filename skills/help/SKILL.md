@@ -128,6 +128,7 @@ Principles are one-rule skills that the lead reads and cites in its replies. The
 | Subagents stopped mid-task | Closing the terminal stops them. Type `/bg` first next time. To recover, follow the Session pickup playbook against their worktrees. |
 | The git guard blocked a command | It blocks force-pushes, `reset --hard`, `clean -f`, and whole-tree discards on purpose. An owner publishes its own rebased branch with `git push --force-with-lease origin <branch>`. See [`hooks/git-guard.py`](../../hooks/git-guard.py). |
 | The correct reminder fired on a prompt that wasn't a correction | Its patterns live in one table at the top of [`hooks/correct-reminder.py`](../../hooks/correct-reminder.py). Set `KEEL_CORRECT=off` to silence it. |
+| Every turn now takes an extra review pass | That's [`hooks/think.py`](../../hooks/think.py): it injects a dig protocol on each prompt and blocks the first stop of each turn for a review. Set `KEEL_THINK=off` to turn it off. |
 | An overnight run moved but finished nothing | `/loop` needs a check that can pass or fail, not a duration. See [guide page 7](../../docs/guide/07-overnight.md). |
 | The reply claims success from a green build | Ask for the real command, flow, stored value, or profile. That's the prove-it-works principle. |
 

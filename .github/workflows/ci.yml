@@ -32,6 +32,8 @@ jobs:
           python3 hooks/test_git_guard.py
           python3 -m py_compile hooks/correct-reminder.py
           python3 hooks/test_correct_reminder.py
+          python3 -m py_compile hooks/think.py
+          python3 hooks/test_think.py
           echo '{}' | sh hooks/lead-reminder.sh | python3 -m json.tool > /dev/null
 
       - name: Test the playbook scripts
