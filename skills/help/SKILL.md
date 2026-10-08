@@ -75,6 +75,7 @@ The default answer is the lead, which runs most of the others when its steps nee
 | Run a large or cross-cutting change, or one to review after stepping away | [`/keel:figure-it-out`](../figure-it-out/SKILL.md) |
 | Keep a decision log during a run, and review it afterward | [`/keel:show-me-your-work`](../show-me-your-work/SKILL.md) |
 | Pick a model for each role | [`/keel:setup`](../setup/SKILL.md) |
+| Set up local memory and task-history search so the agent queries it before answering | [`/keel:qmd`](../qmd/SKILL.md) |
 | Turn their own working habits into a personal mode skill | [`/keel:automate-me`](../automate-me/SKILL.md) |
 | Turn what a finished task taught into skill edits | [`/keel:reflect`](../reflect/SKILL.md) |
 | Stop agents from repeating the same mistakes in this repo | [`/keel:correct`](../correct/SKILL.md) |
@@ -129,6 +130,7 @@ Principles are one-rule skills that the lead reads and cites in its replies. The
 | The git guard blocked a command | It blocks force-pushes, `reset --hard`, `clean -f`, and whole-tree discards on purpose. An owner publishes its own rebased branch with `git push --force-with-lease origin <branch>`. See [`hooks/git-guard.py`](../../hooks/git-guard.py). |
 | The correct reminder fired on a prompt that wasn't a correction | Its patterns live in one table at the top of [`hooks/correct-reminder.py`](../../hooks/correct-reminder.py). Set `KEEL_CORRECT=off` to silence it. |
 | Every turn now takes an extra review pass | That's [`hooks/think.py`](../../hooks/think.py): it injects a dig protocol on each prompt and blocks the first stop of each turn for a review. Set `KEEL_THINK=off` to turn it off. |
+| A turn ends with "this turn searched/read but never queried qmd" | That's [`hooks/qmd.py`](../../hooks/qmd.py)'s `stop` mode, warning that the turn used Grep/Glob/Read/Bash/WebSearch/WebFetch/Agent without ever calling an `mcp__qmd__*` tool. Run `/keel:qmd` if qmd isn't set up yet, or set `KEEL_QMD=off` to silence it. |
 | An overnight run moved but finished nothing | `/loop` needs a check that can pass or fail, not a duration. See [guide page 7](../../docs/guide/07-overnight.md). |
 | The reply claims success from a green build | Ask for the real command, flow, stored value, or profile. That's the prove-it-works principle. |
 
