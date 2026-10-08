@@ -1,14 +1,16 @@
 #!/usr/bin/env python3
 # Wire qmd (https://github.com/tobi/qmd) in as keel's memory layer, so the agent searches recorded
 # memory and task history before answering instead of guessing or rereading whole folders.
-#   qmd.py start  (SessionStart) ensures the daemon is up, converts recorded sessions to markdown,
-#                 runs `qmd update`, then spawns `qmd.py embed` detached. Always returns fast.
+#   qmd.py start  (SessionStart) ensures the daemon is up, then spawns `qmd.py embed` detached.
+#                 Always returns fast; never blocks on session conversion, `qmd update`, or `qmd embed`.
 #   qmd.py stop   (Stop) warns once when the turn searched or read but never queried qmd.
-#   qmd.py embed  takes an exclusive lock and runs `qmd embed`; a concurrent second call is a no-op.
-#   qmd.py watch  long-running poll loop: debounced `qmd update` + embed on *.md changes under
-#                 KEEL_QMD_WATCH, daemon health check, and a keep-warm query, so the daemon's
+#   qmd.py embed  takes an exclusive lock, converts recorded sessions to markdown, runs `qmd update`,
+#                 then `qmd embed`; a concurrent second call is a no-op.
+#   qmd.py watch  long-running poll loop: debounced `qmd.py embed` (update + embed) on *.md changes
+#                 under KEEL_QMD_WATCH, daemon health check, and a keep-warm query, so the daemon's
 #                 5-minute idle context eviction never bites a real query.
 # Set KEEL_QMD=off to silence every mode. Every mode is a silent no-op when `qmd` is not on PATH.
+# KEEL_QMD_STATE_DIR overrides where lock files live (default ~/.cache/qmd); mainly for tests.
 import glob, json, os, shutil, subprocess, sys, time, urllib.request
 
 try:
@@ -19,6 +21,7 @@ except ImportError:
 
 DAEMON_URL = "http://localhost:8181"
 MAX_TEXT = 4000
+TAIL_BYTES = 1024 * 1024
 SEARCH_TOOLS = {"Grep", "Glob", "Read", "Bash", "WebSearch", "WebFetch", "Agent"}
 SKIP_DIR_NAMES = {".git", ".obsidian", ".trash", "node_modules"}
 
@@ -51,7 +54,7 @@ def http_post_json(url, payload, timeout=5):
 def spawn_detached(args):
     kwargs = {"stdin": subprocess.DEVNULL, "stdout": subprocess.DEVNULL, "stderr": subprocess.DEVNULL}
     if os.name == "nt":
-        kwargs["creationflags"] = subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP
+        kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW | subprocess.CREATE_NEW_PROCESS_GROUP
     else:
         kwargs["start_new_session"] = True
     try:
@@ -72,10 +75,12 @@ def ensure_daemon(qmd):
         spawn_detached([qmd, "mcp", "--http", "--daemon"])
 
 
-# --- cross-platform exclusive, non-blocking file lock (msvcrt on Windows, flock elsewhere) ---
+def state_dir():
+    return os.environ.get("KEEL_QMD_STATE_DIR") or os.path.join(os.path.expanduser("~"), ".cache", "qmd")
+
 
 def lock_path(name):
-    path = os.path.join(os.path.expanduser("~"), ".cache", "qmd", name)
+    path = os.path.join(state_dir(), name)
     os.makedirs(os.path.dirname(path), exist_ok=True)
     return path
 
@@ -107,8 +112,6 @@ def release_lock(f):
     finally:
         f.close()
 
-
-# --- session transcript (.jsonl) -> compact markdown, so qmd can search past turns ---
 
 def user_text(content):
     if isinstance(content, str):
@@ -181,20 +184,16 @@ def convert_sessions():
     return written
 
 
-# --- modes ---
-
 def start():
     read_event()
     qmd = shutil.which("qmd")
     ensure_daemon(qmd)
-    convert_sessions()
-    run_quiet([qmd, "update"], timeout=20)
     spawn_detached([sys.executable, os.path.abspath(__file__), "embed"])
     return None
 
 
 def is_user_prompt(entry):
-    if entry.get("type") != "user":
+    if entry.get("type") != "user" or entry.get("isMeta"):
         return False
     content = entry.get("message", {}).get("content")
     if isinstance(content, str):
@@ -204,14 +203,25 @@ def is_user_prompt(entry):
     )
 
 
-def tools_in_last_turn(path):
+def read_tail_entries(path):
+    size = os.path.getsize(path)
+    with open(path, "rb") as f:
+        if size > TAIL_BYTES:
+            f.seek(size - TAIL_BYTES)
+            f.readline()  # drop the partial line left by seeking into the middle of it
+        data = f.read()
     entries = []
-    with open(path, encoding="utf-8") as f:
-        for line in f:
-            try:
-                entries.append(json.loads(line))
-            except ValueError:
-                continue
+    for line in data.decode("utf-8", errors="ignore").splitlines():
+        try:
+            entries.append(json.loads(line))
+        except ValueError:
+            continue
+    return entries
+
+
+def tools_in_last_turn(path):
+    entries = read_tail_entries(path)
+    # No real prompt in the tail (default -1) means the whole tail is the turn.
     start_i = max((i for i, e in enumerate(entries) if is_user_prompt(e)), default=-1)
     names = []
     for e in entries[start_i + 1:]:
@@ -242,29 +252,39 @@ def embed():
     if lock is None:
         return None
     try:
+        convert_sessions()
+        run_quiet([qmd, "update"], timeout=20)
         run_quiet([qmd, "embed"])
     finally:
         release_lock(lock)
     return None
 
 
-def scan_latest_mtime(roots):
+def scan_signature(roots):
+    count = 0
     latest = 0.0
     for root in roots:
         for dirpath, dirnames, filenames in os.walk(root):
             dirnames[:] = [d for d in dirnames if d not in SKIP_DIR_NAMES]
             for name in filenames:
                 if name.endswith(".md"):
+                    count += 1
                     try:
                         latest = max(latest, os.path.getmtime(os.path.join(dirpath, name)))
                     except OSError:
                         pass
-    return latest
+    return (count, latest)
 
 
 def watch():
     qmd = shutil.which("qmd")
-    roots = [p for p in os.environ.get("KEEL_QMD_WATCH", "").split(os.pathsep) if p]
+    configured = [p for p in os.environ.get("KEEL_QMD_WATCH", "").split(os.pathsep) if p]
+    roots = []
+    for root in configured:
+        if os.path.isdir(root):
+            roots.append(root)
+        else:
+            print(f"qmd watch: root does not exist, skipping: {root}", file=sys.stderr)
     if not roots:
         return None
     lock = acquire_lock(lock_path("keel-watch.lock"))
@@ -274,17 +294,16 @@ def watch():
         pending = None
         last_health = 0.0
         last_warm = 0.0
-        last_seen = scan_latest_mtime(roots)
+        last_seen = scan_signature(roots)
         while True:
             time.sleep(2)
             now = time.time()
-            seen = scan_latest_mtime(roots)
-            if seen > last_seen:
+            seen = scan_signature(roots)
+            if seen != last_seen:
                 last_seen = seen
                 pending = now
             if pending is not None and now - pending >= 10:
                 pending = None
-                run_quiet([qmd, "update"], timeout=60)
                 spawn_detached([sys.executable, os.path.abspath(__file__), "embed"])
             if now - last_health >= 60:
                 last_health = now
