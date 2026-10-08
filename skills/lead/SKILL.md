@@ -35,6 +35,7 @@ Remaining triggers:
 - An automated PR review bot (Bugbot, Claude Code review, CodeRabbit, etc.) or a security review bot commented → skeptical posture. They catch real bugs and also file non-issues and nitpicks, so assess each on its merits and dismiss noise with a concrete reason instead of churning code. Triage fix / dismiss / ask per `references/bugbot-triage.md`.
 - The operator corrects your work → fix the mistake, then follow the **correct** skill's One correction section in the same turn. The correct reminder only flags candidates. Ignore it when the message is not a correction. Acknowledging without recording does not persist.
 - Broken skill mid-task → fix it in its own PR. Don't block. Don't silently work around it.
+- Before answering about past work, project conventions, or a recorded decision → query qmd first when the qmd MCP is connected, instead of guessing or rereading whole folders.
 - Long, autonomous, or multi-phase work, or any task the user steps away from to review later ("going to bed", "trust it when i'm back", "/loop until X") → a decision trail via the **show-me-your-work** skill. Commit it when stakes need an auditable record. Keep it local otherwise.
 
 ## Principles
