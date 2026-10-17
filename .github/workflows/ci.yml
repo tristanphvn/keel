@@ -36,6 +36,9 @@ jobs:
           python3 hooks/test_think.py
           echo '{}' | sh hooks/lead-reminder.sh | python3 -m json.tool > /dev/null
 
+      - name: Test the qmd skill scripts
+        run: bash skills/qmd/scripts/test-setup-qmd.sh
+
       - name: Test the playbook scripts
         working-directory: skills/lead/scripts
         run: |
