@@ -9,6 +9,7 @@ export PYTHONDONTWRITEBYTECODE=1
 HERE="$(cd "$(dirname "$0")" && pwd)"
 SB="${QMD_TEST_DIR:-$(mktemp -d)}"
 SB="$(mkdir -p "$SB" && cd -P "$SB" && pwd)"
+[ -n "$SB" ] && [ "$SB" != / ] && [ -d "$SB" ] || { echo "cannot create QMD_TEST_DIR" >&2; exit 2; }
 REAL_HOME="$(cd -P "$HOME" && pwd)"
 case "$REAL_HOME/" in "$SB/"*) echo "QMD_TEST_DIR must not contain HOME" >&2; exit 2 ;; esac
 if command -v sandbox-exec >/dev/null 2>&1; then
@@ -226,15 +227,18 @@ new_case missing Darwin
 rm "$ST/qmd"; before="$(snapshot "$H")"
 setup -- --root "$H/code"; rc=$?
 check "exit 3 with install hint, nothing written" '[ $rc = 3 ] && grep -q "bun install -g @tobilu/qmd" "$C/out" && [ "$(snapshot "$H")" = "$before" ]'
+check "error message does not end with the exit code" 'grep -q "then re-run\.$" "$C/out"'
 new_case badroot Darwin
 setup -- --root "$H/nope"; rc=$?
-check "missing root exits 2 before any write" '[ $rc = 2 ] && [ ! -e "$H/.config/qmd" ]'
+check "missing root exits 2 before any write" '[ $rc = 2 ] && [ ! -e "$H/.config/qmd" ] && grep -qx "error: --root $H/nope is not a directory" "$C/out"'
 
 echo "== setup: --discover"
 new_case discover Darwin
-mkdir -p "$H/code/app/node_modules/x" "$H/code/.hidden"; echo x >"$H/code/app/node_modules/x/r.md"; echo x >"$H/code/.hidden/h.md"
+mkdir -p "$H/code/app/node_modules/x" "$H/code/.hidden" "$H/code/locked"; echo x >"$H/code/app/node_modules/x/r.md"; echo x >"$H/code/.hidden/h.md"
+chmod 000 "$H/code/locked"
 setup -- --discover; rc=$?
-check "counts markdown, skips node_modules and dot dirs" '[ $rc = 0 ] && grep -Eq "^ +2  $H/code$" "$C/out" && grep -Eq "^ +1  $H/code/app$" "$C/out" && ! grep -q "\.claude" "$C/out"'
+chmod 755 "$H/code/locked"
+check "counts markdown, skips node_modules and dot dirs, survives an unreadable folder" '[ $rc = 0 ] && grep -Eq "^ +2  $H/code$" "$C/out" && grep -Eq "^ +1  $H/code/app$" "$C/out" && ! grep -q "\.claude" "$C/out"'
 
 echo "== setup: a broken config file fails the run"
 new_case badjson Darwin
@@ -273,6 +277,23 @@ new_case memparent Darwin
 mkdir -p "$H/.config/qmd"; printf 'collections:\n  home:\n    path: %s\n    pattern: "**/*.md"\n' "$H" >"$H/.config/qmd/index.yml"
 setup -- --memory --no-schedule; rc=$?
 check "exit 0, no dry-run line, says why no ignore list" '[ $rc = 0 ] && ! grep -q "dry-run" "$C/out" && grep -q "claude-memory: no ignore list" "$C/out" && ! grep -q "no collection named claude-memory" "$C/out"'
+
+echo "== setup: --memory when its collection name belongs to another folder"
+new_case memname Darwin
+mkdir -p "$H/.config/qmd" "$H/notes"
+printf 'collections:\n  claude-memory:\n    path: %s\n    pattern: "**/*.md"\n' "$H/notes" >"$H/.config/qmd/index.yml"
+orig="$(cat "$H/.config/qmd/index.yml")"
+setup -- --memory --no-schedule; rc=$?
+check "exit 0, the other collection and its context untouched" '[ $rc = 0 ] && [ "$(head -4 "$H/.config/qmd/index.yml")" = "$orig" ] && ! grep -q "^context add qmd://claude-memory " "$CL/qmd.calls"'
+check "memory added as home-claude-memory with its ignore list and context" '[ "$(python3 "$HERE/qmd-config.py" collections "$H/.config/qmd/index.yml" | tail -1)" = "home-claude-memory$(printf "\t")$H/.claude/projects" ] && [ "$(sed -n "5,\$p" "$H/.config/qmd/index.yml" | grep -c -e "-private-tmp-" -e "\"-tmp-")" = 2 ] && grep -q "^context add qmd://home-claude-memory " "$CL/qmd.calls"'
+setup -- --memory --no-schedule; rc=$?
+check "re-run keeps the same name, adds nothing" '[ $rc = 0 ] && [ "$(calls qmd "collection add")" = 1 ] && grep -q "ignore list: unchanged" "$C/out"'
+new_case memtaken Darwin
+mkdir -p "$H/.config/qmd" "$H/a" "$H/b"
+printf 'collections:\n  claude-memory:\n    path: %s\n  home-claude-memory:\n    path: %s\n' "$H/a" "$H/b" >"$H/.config/qmd/index.yml"
+orig="$(cat "$H/.config/qmd/index.yml")"
+setup -- --memory --no-schedule; rc=$?
+check "both names taken: warns, changes nothing" '[ $rc = 0 ] && grep -q "warning: .*--memory added nothing" "$C/out" && [ "$(cat "$H/.config/qmd/index.yml")" = "$orig" ] && [ "$(calls qmd "context add")" = 0 ]'
 
 echo "== setup: a root whose folder name has a colon"
 new_case colon Darwin
@@ -334,6 +355,18 @@ check "one pass" '[ "$(tr "\n" " " <"$CL/qmd.calls")" = "update embed " ]'
 check "no-arg label is manual" 'grep -q "start (manual)" "$LOG"'
 check "lock removed" '[ ! -L "$LK" ]'
 
+echo "== reconcile: a caller that arrives after the last rerun check still gets a pass"
+mk late
+printf '#!/bin/bash\n[ -e "$HOME/slow" ] && sleep 1\nexec /bin/date "$@"\n' >"$H/bin/date"; chmod +x "$H/bin/date"
+printf '#!/bin/bash\necho "$1" >>"$STUB_CALLS/qmd.calls"\n[ "$1" = embed ] && [ ! -e "$HOME/slow" ] && touch "$HOME/slow"\nexit 0\n' >"$H/bin/qmd"
+run bash "$Q/reconcile.sh" first & A=$!
+for _ in $(seq 1 50); do [ -e "$H/slow" ] && break; sleep 0.05; done
+sleep 1.5
+run bash "$Q/reconcile.sh" late; rl=$?
+wait $A
+check "late caller exits 0, holder runs a second pass" '[ $rl = 0 ] && [ "$(tr "\n" " " <"$CL/qmd.calls")" = "update embed update embed " ]'
+check "rerun flag and lock cleared" '[ ! -e "$RR" ] && [ ! -L "$LK" ]'
+
 echo "== reconcile: live foreign lock"
 mk live
 sleep 30 & LIVE=$!; ln -s "$LIVE" "$LK"
@@ -360,8 +393,9 @@ check "exit 1, logged, lock released" '[ $rc = 1 ] && grep -q "ERROR update: boo
 
 echo "== on-edit-hook"
 mk hook
-V="$H/vaults/acme"; mkdir -p "$V/notes" "$H/elsewhere" "$H/q dir"; ln -s "$V" "$H/vlink"
-printf 'collections:\n  acme:\n    path: %s\n    pattern: "**/*.md"\n  quoted:\n    path: "%s"\n' "$V" "$H/q dir" >"$Q/index.yml"
+V="$H/vaults/acme"; mkdir -p "$V/notes" "$H/elsewhere" "$H/q dir" "$H/Bob's notes" "$H/it's" "$H/say \"hi\""; ln -s "$V" "$H/vlink"
+printf 'collections:\n  acme:\n    path: %s\n    pattern: "**/*.md"\n  quoted:\n    path: "%s"\n  apos:\n    path: %s\n  sq:\n    path: %s\n  dq:\n    path: %s\n' \
+  "$V" "$H/q dir" "$H/Bob's notes" "'$H/it''s'" "$H/say \"hi\"" >"$Q/index.yml"
 printf '#!/bin/bash\nsleep 5\necho "$1" >>"$HOME/reconcile.calls"\n' >"$Q/reconcile.sh"
 now() { python3 -c 'import time; print(time.time())'; }
 fire() { rm -f "$H/reconcile.calls"; local t0; t0=$(now)
@@ -373,6 +407,9 @@ check "md inside a collection returns in under 1 s ($ELAPSED s)" '[ $HRC = 0 ] &
 check "md inside a collection triggers reconcile with label hook" 'called && [ "$(cat "$H/reconcile.calls")" = hook ]'
 fire "{\"tool_input\":{\"file_path\":\"$H/vlink/notes/b.md\"}}"; check "symlinked path resolves into the collection" 'called'
 fire "{\"tool_input\":{\"file_path\":\"$H/q dir/c.md\"}}"; check "quoted path with a space" 'called'
+fire "{\"tool_input\":{\"file_path\":\"$H/Bob's notes/a.md\"}}"; check "path with an apostrophe, as qmd writes it" 'called'
+fire "{\"tool_input\":{\"file_path\":\"$H/it's/a.md\"}}"; check "single-quoted path with a doubled apostrophe" 'called'
+fire "{\"tool_input\":{\"file_path\":\"$H/say \\\"hi\\\"/a.md\"}}"; check "path with double quotes" 'called'
 fire "{\"tool_input\":{\"file_path\":\"$H/elsewhere/a.md\"}}"; sleep 6; check "md outside: no trigger" '[ $HRC = 0 ] && [ ! -f "$H/reconcile.calls" ]'
 fire "{\"tool_input\":{\"file_path\":\"$V/notes/a.txt\"}}"; sleep 6; check "non-md: no trigger" '[ $HRC = 0 ] && [ ! -f "$H/reconcile.calls" ]'
 fire "{\"tool_input\":{\"file_path\":\"${V}x/a.md\"}}"; sleep 6; check "sibling dir with the same prefix: no trigger" '[ ! -f "$H/reconcile.calls" ]'

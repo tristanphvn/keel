@@ -2,8 +2,9 @@
 # Refresh the global qmd index: re-scan every collection, then embed new or changed docs.
 # The scheduler, on-edit-hook.sh, and setup-qmd.sh call it. So can you, by hand.
 # One run at a time. The lock is a symlink whose target is the holder's PID, made atomically.
-# A caller that finds the lock held leaves a rerun flag. The holder loops while the flag
-# reappears, so edits made during a long embed land in the same run.
+# A caller that finds the lock held leaves a rerun flag, then tries the lock once more. The
+# holder loops while the flag reappears, and checks it again after it lets go of the lock, so
+# a caller that arrives at any point gets a pass from one of them.
 set -uo pipefail
 # launchd and hooks may not carry the user's env, so pin what setup found. qmd's launcher
 # execs node or bun, so the dirs setup found them in go on PATH next to qmd's own.
@@ -44,13 +45,14 @@ acquire() {
 
 if ! acquire; then
   touch "$RERUN"
-  exit 0
+  acquire || exit 0
 fi
-trap '[ "$(readlink "$LOCK" 2>/dev/null)" = "$$" ] && rm -f -- "$LOCK"' EXIT
+release() { [ "$(readlink "$LOCK" 2>/dev/null)" = "$$" ] && rm -f -- "$LOCK"; }
+trap release EXIT
 
 [ -x "$QMD" ] || { log "ERROR: qmd not found at $QMD"; exit 1; }
 log "start (${1:-manual})"
-pass=0
+pass=0 capped=0
 while :; do
   rm -f -- "$RERUN"
   pass=$((pass + 1))
@@ -65,6 +67,9 @@ while :; do
     log "ERROR embed: $(printf '%s' "$out" | tr '\r' '\n' | tail -3 | paste -sd' ' -)"; exit 1
   fi
   [ -e "$RERUN" ] || break
-  [ "$pass" -ge 5 ] && { log "stopping after $pass passes; rerun flag left for next run"; touch "$RERUN"; break; }
+  [ "$pass" -ge 5 ] && { log "stopping after $pass passes; rerun flag left for next run"; touch "$RERUN"; capped=1; break; }
 done
 log "done"
+release
+if [ "$capped" = 0 ] && [ -e "$RERUN" ]; then exec /bin/bash "$0" rerun; fi
+exit 0

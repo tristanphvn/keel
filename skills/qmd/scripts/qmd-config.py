@@ -24,9 +24,15 @@ def indent(line: str) -> int:
 
 
 def unquote(value: str) -> str:
+    """A YAML scalar as written by qmd or by hand: plain, 'single' or "double" quoted."""
     value = value.strip()
-    if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
-        return value[1:-1]
+    if len(value) >= 2 and value[0] == value[-1] == "'":
+        return value[1:-1].replace("''", "'")
+    if len(value) >= 2 and value[0] == value[-1] == '"':
+        try:
+            return json.loads(value)
+        except json.JSONDecodeError:
+            return value[1:-1]
     return value
 
 
@@ -84,7 +90,7 @@ def write(path: str, data: str | bytes, backup_dir: str | None = None) -> None:
         mode = 0o600 if os.path.basename(path) == ".claude.json" else 0o666 & ~current_umask()
     os.makedirs(os.path.dirname(path), exist_ok=True)
     tmp = f"{path}.tmp-{os.getpid()}"
-    with open(tmp, "wb") as f:
+    with os.fdopen(os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL, mode), "wb") as f:
         f.write(data.encode("utf-8") if isinstance(data, str) else data)
     os.chmod(tmp, mode)
     os.replace(tmp, path)

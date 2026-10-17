@@ -33,7 +33,7 @@ while [ $# -gt 0 ]; do
           -o -name '.*' \) -prune -o -type f -name '*.md' -print 2>/dev/null |
         awk -v home="$HOME/" '{ p = substr($0, length(home) + 1); n = split(p, a, "/");
           c[home a[1]]++; if (n > 2) c[home a[1] "/" a[2]]++ }
-          END { for (d in c) printf "%7d  %s\n", c[d], d }' | sort -rn | head -25
+          END { for (d in c) printf "%7d  %s\n", c[d], d }' | sort -rn | head -25 || true
       exit 0 ;;
     -h|--help) usage; exit 0 ;;
     *) usage >&2; exit 2 ;;
@@ -42,7 +42,7 @@ done
 
 say() { printf '%s\n' "$*"; }
 warn() { printf 'warning: %s\n' "$*" >&2; }
-die() { printf 'error: %s\n' "$*" >&2; exit "${2:-1}"; }
+die() { printf 'error: %s\n' "$1" >&2; exit "${2:-1}"; }
 cfg() { python3 "$HERE/qmd-config.py" "$@" $([ "$DRY" = 1 ] && echo --dry-run); }
 run() { if [ "$DRY" = 1 ]; then say "dry-run: would run $*"; else "$@" >/dev/null; fi; }
 
@@ -89,6 +89,7 @@ done
 
 EXISTING="$(cfg collections "$INDEX")"
 has_name() { grep -q "^$2"$'\t' <<<"$1"; }
+path_of() { grep -m1 "^$1"$'\t' <<<"$EXISTING" | cut -f2- || true; }
 covered_by() { # covered_by NAME PATH: print why NAME/PATH needs no new collection
   local n p real
   while IFS=$'\t' read -r n p; do
@@ -114,8 +115,23 @@ add_collection() { # add_collection NAME PATH MASK
 i=0
 while [ "$i" -lt "${#ADD_PATHS[@]}" ]; do add_collection "${ADD_NAMES[$i]}" "${ADD_PATHS[$i]}" '**/*.md'; i=$((i + 1)); done
 if [ "$MEMORY" = 1 ]; then
-  mem_name="$(slug "$(basename "$CLAUDE_DIR")")-memory"
-  if mem_path="$(realdir "$CLAUDE_DIR/projects")"; then
+  # Two profiles can share a dir name, so fall back to a name that adds the parent dir.
+  mem_base="$(slug "$(basename "$CLAUDE_DIR")")-memory"
+  mem_names=("$mem_base" "$(slug "$(basename "$(dirname "$CLAUDE_DIR")")")-$mem_base")
+  mem_name=""
+  if ! mem_path="$(realdir "$CLAUDE_DIR/projects")"; then
+    warn "$CLAUDE_DIR/projects does not exist yet, so --memory added nothing. Re-run after Claude Code has saved a memory."
+  else
+    for n in "${mem_names[@]}"; do
+      p="$(path_of "$n")"
+      [ -n "$p" ] && [ "$(realdir "$p" || echo "$p")" = "$mem_path" ] && { mem_name="$n"; break; }
+    done
+    if [ -z "$mem_name" ]; then
+      for n in "${mem_names[@]}"; do [ -z "$(path_of "$n")" ] && { mem_name="$n"; break; }; done
+    fi
+    [ -n "$mem_name" ] || warn "collections ${mem_names[*]} already index other folders, so --memory added nothing. Remove one, or add $mem_path with --root."
+  fi
+  if [ -n "$mem_name" ]; then
     add_collection "$mem_name" "$mem_path" '*/memory/**/*.md'
     indexed="$(cfg collections "$INDEX")"
     if has_name "$indexed" "$mem_name"; then
@@ -128,8 +144,6 @@ if [ "$MEMORY" = 1 ]; then
     else
       say "collection $mem_name: no ignore list, since no collection of that name was added. The parent collection still indexes the -private-tmp-* and -tmp-* project notes."
     fi
-  else
-    warn "$CLAUDE_DIR/projects does not exist yet, so --memory added nothing. Re-run after Claude Code has saved a memory."
   fi
 fi
 for spec in "${CONTEXTS[@]+"${CONTEXTS[@]}"}"; do
