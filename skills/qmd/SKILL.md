@@ -22,7 +22,7 @@ Set up [qmd](https://github.com/tobi/qmd) so agents in every profile and project
 
 ### 2. Pick what to index
 
-1. Run the script with `--discover`. It counts `*.md` under each folder in `$HOME` and one level below, skipping `node_modules`, `.git`, `dist`, `build`, `vendor`, and dot folders.
+1. Run the script with `--discover`. It counts `*.md` under each folder in `$HOME` and one level below. It skips `node_modules`, `.git`, `dist`, `build`, `vendor`, and dot folders, and at the top level also `Library`, `Applications`, `Movies`, `Music`, and `Pictures`. Folders it cannot read are left out of the counts.
 2. Suggest roots from that list and ask with AskUserQuestion, `multiSelect: true`, at most four options. Prefer one collection per root folder, such as a code folder with one subfolder per project, so a new project under it gets indexed without a re-run. The script skips a root that sits inside an existing collection.
 3. Ask whether to index this profile's Claude Code auto-memory too (`--memory`). It adds `<profile>/projects` with the pattern `*/memory/**/*.md` and ignores the `-private-tmp-*` and `-tmp-*` project folders that scratch sessions leave.
 4. Offer a one-line description per root. qmd shows it to agents next to search results.
@@ -35,9 +35,10 @@ Run with `--dry-run` and the chosen flags, then read the output. If it would cha
 |---|---|
 | `--root PATH[:NAME]` | Add a collection of every `*.md` under `PATH`. `NAME` defaults to the folder name, lowercased, with each character outside `a-z0-9_-` turned into `-`. A `PATH` that is itself a folder is never split at a colon. Repeat per root. |
 | `--context NAME:TEXT` | Attach a description to collection `NAME`. Repeat per collection. Pass an explicit `PATH:NAME` on the matching `--root`, so the two names agree. |
-| `--memory` | Add this profile's auto-memory folders as `<profile-dir-name>-memory`. |
+| `--memory` | Add this profile's auto-memory folders as `<profile-dir-name>-memory`. When another folder already holds that name, as with a second profile also named `.claude`, it uses `<parent-dir-name>-<profile-dir-name>-memory`. When both names are taken it warns and adds nothing. |
 | `--no-schedule` | Skip the scheduled refresh. `QMD_SCHEDULE=0` does the same. |
 | `--dry-run` | Print what would change and write nothing. |
+| `--discover` | List folders under `$HOME` by markdown file count, then exit. |
 
 `QMD_LAUNCHD_LABEL` overrides the LaunchAgent label, `local.qmd.reconcile` by default.
 
@@ -46,7 +47,7 @@ Run with `--dry-run` and the chosen flags, then read the output. If it would cha
 1. `<qmd> collection list` shows each chosen root, or the script printed why it skipped one.
 2. `claude mcp get qmd` finds the server. Without the `claude` CLI, check that `mcpServers.qmd` exists in the `.claude.json` path the script printed.
 3. The profile's `settings.json` has a `PostToolUse` entry whose command runs `on-edit-hook.sh`, as the script's `PostToolUse hook` line reported.
-4. `tail -n 5` on the log path the script printed shows a `start (...)` line within a minute. On macOS the LaunchAgent runs it at load.
+4. `tail -n 5` on the log path the script printed shows a `start (...)` line. It may come from an earlier run whose embed is still going, since a run that finds another one holding the lock only leaves a `reconcile.rerun` file in the log folder and logs nothing. Either a `start` line without a later `done`, or that file, passes this check.
 5. `<qmd> status` shows documents waiting for embeddings, and its Device section shows whether qmd found a GPU.
 
 ### 5. Report
@@ -62,7 +63,7 @@ Tell the user what each collection holds, which profile you wired, and that Clau
 | MCP server `qmd` | User scope, through `claude mcp add -s user qmd -- <qmd> mcp`. Claude Code keeps it in `$CLAUDE_CONFIG_DIR/.claude.json` when that variable is set, else `~/.claude.json`. Without the `claude` CLI the script merges the entry into that file itself. |
 | PostToolUse hook | `<profile>/settings.json`, matcher `Write\|Edit`, timeout 10. |
 | Search guidance | `<profile>/CLAUDE.md`, between `<!-- keel:qmd start -->` and `<!-- keel:qmd end -->`. A re-run replaces the block in place. |
-| Scheduled refresh | macOS gets `~/Library/LaunchAgents/<label>.plist`, every 1800 s, `RunAtLoad`, `Nice 15`, `LowPriorityIO`. The script bootstraps it only when `launchctl print gui/$UID/<label>` fails. Other systems get a cron line to add by hand. |
+| Scheduled refresh | macOS gets `~/Library/LaunchAgents/<label>.plist`, every 1800 s, `RunAtLoad`, `Nice 15`, `LowPriorityIO`. The script loads it with `launchctl bootstrap` when `launchctl print gui/$UID/<label>` fails. When the agent is loaded and the plist content changed, it unloads it with `launchctl bootout` and loads it again. Other systems get a cron line to add by hand. |
 
 The first `reconcile.sh` run starts in the background, from the LaunchAgent or from the script, so setup never waits for embeddings.
 
@@ -77,6 +78,7 @@ Run these for each profile you wired, with `P="${CLAUDE_CONFIG_DIR:-$HOME/.claud
 1. Run `claude mcp remove -s user qmd`. Without the `claude` CLI, delete `mcpServers.qmd` from `$CLAUDE_CONFIG_DIR/.claude.json` when that variable is set, else from `~/.claude.json`.
 2. Delete the `PostToolUse` entry whose command runs `on-edit-hook.sh` from `$P/settings.json`.
 3. Delete the block between the `keel:qmd` markers in `$P/CLAUDE.md`.
+4. Delete the backups setup left next to those files: `$P/settings.json.qmd-backup-*`, `$P/CLAUDE.md.qmd-backup-*`, and, when the script merged the MCP entry itself, `.claude.json.qmd-backup-*` next to the `.claude.json` path it printed. When one of these files is a symlink, its backup sits next to the link's target.
 
 Then once per machine:
 

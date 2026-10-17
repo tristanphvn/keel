@@ -288,6 +288,7 @@ keel changes how pstack runs, not what it teaches.
 - **Names.** `poteto-mode`, `poteto-agent`, Comment Sicko, `setup-pstack` and `poteto-help` become `lead`, `ponytail`, `critic`, `setup` and `help`.
 - **Models.** Claude Code has no grok. Review panels use Opus, Fable and Sonnet, and `interrogate` adds a Codex lane.
 - **Shape.** The lead is a skill loaded by the main session, because running a session as an agent replaces Claude Code's own instructions. critic is read-only, ponytail keeps memory, and keel adds the git guard and the lead reminder.
+- **Added.** [`/keel:qmd`](./skills/qmd/SKILL.md) is keel's own opt-in skill and has no pstack counterpart.
 - **Removed.** The benny Slack automation pack, the `make-bot-ui` skill, Cursor's plugin manifest, and pstack's logo and illustrations. They are Cursor-only or pstack's own branding.
 
 [`UPSTREAM.md`](./UPSTREAM.md) has the full translation and rename tables and how to pull future pstack changes.
@@ -308,7 +309,7 @@ pstack's Cursor model rule file does not carry over. Run `/keel:setup` once in C
 
 ## credits and license
 
-- **pstack** by Lauren Tan ([poteto](https://x.com/poteto)), from [cursor/plugins](https://github.com/cursor/plugins/tree/main/pstack) at commit `12d587d` (pstack 0.15.5), MIT. keel's skills, playbooks, principles, references, scripts, guide and both agents are adapted from it. Later commits through `4e5b1cf` (pstack 0.15.10) are ported as [`UPSTREAM.md`](./UPSTREAM.md) records.
+- **pstack** by Lauren Tan ([poteto](https://x.com/poteto)), from [cursor/plugins](https://github.com/cursor/plugins/tree/main/pstack) at commit `12d587d` (pstack 0.15.5), MIT. keel's skills, playbooks, principles, references, scripts, guide and both agents are adapted from it, except `/keel:qmd`, which is keel's own. Later commits through `4e5b1cf` (pstack 0.15.10) are ported as [`UPSTREAM.md`](./UPSTREAM.md) records.
 - **Git guardrails** by Matt Pocock, from [mattpocock/skills](https://github.com/mattpocock/skills), MIT. `hooks/git-guard.py` is adapted from it.
 - **keel** by [alexnthnz](https://github.com/alexnthnz), from [alexnthnz/keel](https://github.com/alexnthnz/keel) at commit `72ef257` (keel 0.3.1), MIT.
 - **This fork's changes** by [tristanphvn](https://github.com/tristanphvn), MIT.
