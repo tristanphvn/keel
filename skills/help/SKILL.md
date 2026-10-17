@@ -75,6 +75,7 @@ The default answer is the lead, which runs most of the others when its steps nee
 | Run a large or cross-cutting change, or one to review after stepping away | [`/keel:figure-it-out`](../figure-it-out/SKILL.md) |
 | Keep a decision log during a run, and review it afterward | [`/keel:show-me-your-work`](../show-me-your-work/SKILL.md) |
 | Pick a model for each role | [`/keel:setup`](../setup/SKILL.md) |
+| Search their notes, vaults, or auto-memory from every project with one local qmd index | [`/keel:qmd`](../qmd/SKILL.md) |
 | Turn their own working habits into a personal mode skill | [`/keel:automate-me`](../automate-me/SKILL.md) |
 | Turn what a finished task taught into skill edits | [`/keel:reflect`](../reflect/SKILL.md) |
 | Stop agents from repeating the same mistakes in this repo | [`/keel:correct`](../correct/SKILL.md) |
