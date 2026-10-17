@@ -403,7 +403,9 @@ fire() { rm -f "$H/reconcile.calls"; local t0; t0=$(now)
   ELAPSED=$(python3 -c "print(round($(now) - $t0, 2))"); }
 called() { for _ in $(seq 1 70); do [ -f "$H/reconcile.calls" ] && return 0; sleep 0.1; done; return 1; }
 fire "{\"tool_input\":{\"file_path\":\"$V/notes/a.md\"}}"
-check "md inside a collection returns in under 1 s ($ELAPSED s)" '[ $HRC = 0 ] && python3 -c "import sys; sys.exit(0 if $ELAPSED < 1 else 1)"'
+# The stub reconcile sleeps 5 s, so any time under that proves the hook did not wait for it.
+# The margin covers sandbox-exec and python3 startup on a loaded machine.
+check "md inside a collection returns without waiting for reconcile ($ELAPSED s)" '[ $HRC = 0 ] && python3 -c "import sys; sys.exit(0 if $ELAPSED < 4 else 1)"'
 check "md inside a collection triggers reconcile with label hook" 'called && [ "$(cat "$H/reconcile.calls")" = hook ]'
 fire "{\"tool_input\":{\"file_path\":\"$H/vlink/notes/b.md\"}}"; check "symlinked path resolves into the collection" 'called'
 fire "{\"tool_input\":{\"file_path\":\"$H/q dir/c.md\"}}"; check "quoted path with a space" 'called'
