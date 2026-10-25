@@ -31,7 +31,7 @@ Check the state that changes the answer, and mention it only when it does:
 2. Run [`/keel:setup`](../setup/SKILL.md). It checks for the Codex CLI, maps a model alias to each role, and writes `keel-models.md` in the active Claude config directory. keel skills read it on their next spawn, in this session and new ones.
 3. Start a real task with a goal and a check that can pass or fail. The main session loads the lead on its own, or the user types `/keel:lead`.
 
-keel needs `git`, the GitHub CLI `gh` signed in, `python3` for the hooks, and `bun` for the playbook scripts. Only `lead` and `help` load from the user's words, and `typescript-best-practices` loads when the agent touches a `.ts` or `.tsx` file. The other skills load when the user types them or when the lead reads them for a step. The [README](../../README.md) and [guide page 1](../../docs/guide/01-setup.md) have the details. Offer to word their first prompt with them.
+keel needs `git`, the GitHub CLI `gh` signed in, `python3` for the hooks, `bun` for the playbook scripts, and `node` for the plan checker. Only `lead` and `help` load from the user's words, and `typescript-best-practices` loads when the agent touches a `.ts` or `.tsx` file. The other skills load when the user types them or when the lead reads them for a step. The [README](../../README.md) and [guide page 1](../../docs/guide/01-setup.md) have the details. Offer to word their first prompt with them.
 
 If cost is the worry, say where the tokens go and how to spend fewer. keel spends extra tokens on subagents and review panels. Rerun `/keel:setup` and pick cheaper models, such as `sonnet` or `haiku`, for the roles that matter least. A role set to `inherit` runs on the session's model. A shorter panel list runs fewer subagents, one for each entry. Save the lead for work that needs rigor.
 
@@ -58,6 +58,7 @@ The default answer is the lead, which runs most of the others when its steps nee
 | Know why code is shaped this way, or where a number came from | [`/keel:why`](../why/SKILL.md) |
 | Understand a change or subsystem, explained plainly | [`/keel:teach`](../teach/SKILL.md) |
 | Catch up on their own recent work on a topic | [`/keel:recall`](../recall/SKILL.md) |
+| Catch up on what changed in this chat since their last message, and what waits on them | [`/keel:ketchup`](../ketchup/SKILL.md) |
 | Know what a small diff could break outside itself | [`/keel:blast-radius`](../blast-radius/SKILL.md) |
 | Settle types and module shape before code that crosses a function boundary | [`/keel:architect`](../architect/SKILL.md) |
 | Get several attempts at one brief, merged into the best one | [`/keel:arena`](../arena/SKILL.md) |
@@ -69,8 +70,12 @@ The default answer is the lead, which runs most of the others when its steps nee
 | Clean AI tells out of prose | [`/keel:unslop`](../unslop/SKILL.md) |
 | Write docs, an RFC, a README, a PR description, or a commit message to a standard | [`/keel:technical-writing`](../technical-writing/SKILL.md) |
 | Hear the last reply again in plain words | [`/keel:bro`](../bro/SKILL.md) |
+| Have the agent play back their goal and the problem before it starts | [`/keel:in-your-own-words`](../in-your-own-words/SKILL.md) |
+| Make a prompt deeper, not bigger, before sending it | [`/keel:sharpen`](../sharpen/SKILL.md) |
 | Give agents a scripted way to drive the app and prove behavior | [`/keel:create-verification-skill`](../create-verification-skill/SKILL.md) |
 | Bring a verification skill and its feature map back in line with the app | [`/keel:maintain-verification-skill`](../maintain-verification-skill/SKILL.md) |
+| Prove a property tests can't reach, such as a race, retry, state machine, or parser | [`/keel:create-formal-verification-skill`](../create-formal-verification-skill/SKILL.md) |
+| Bring formal verification back in line after the code it covers changed | [`/keel:maintain-formal-verification-skill`](../maintain-formal-verification-skill/SKILL.md) |
 | Vet a performance number before reporting or acting on it | [`/keel:benchmark-checklist`](../benchmark-checklist/SKILL.md) |
 | Run a large or cross-cutting change, or one to review after stepping away | [`/keel:figure-it-out`](../figure-it-out/SKILL.md) |
 | Keep a decision log during a run, and review it afterward | [`/keel:show-me-your-work`](../show-me-your-work/SKILL.md) |
@@ -89,9 +94,9 @@ Close calls:
 - `/keel:arena` gives every worker the same brief and merges the best parts. `/keel:swarm` splits work into slices or a race and returns one report.
 - `/keel:architect` implements right after it settles the design. Add "with checkpoint" to review the design before it writes code.
 - `/keel:interrogate` reviews the diff. `/keel:blast-radius` looks for breakage outside the diff and proves the one fact that makes the change safe.
-- `/keel:recall` rebuilds context across recent chats. Resuming one specific chat or branch is the Session pickup playbook.
+- `/keel:ketchup` catches up on this chat since the last message. `/keel:recall` rebuilds context across recent chats. Resuming one specific chat or branch is the Session pickup playbook.
 - `/keel:figure-it-out` designs one rigorous run. The Orchestrate playbook runs a program that spans days and many PRs. The Autonomous run playbook drives one task to a finish condition.
-- `/keel:correct` mines history for repeated mistakes and fixes each at the highest level that works. The `hooks/correct-reminder.py` hook runs its one-correction path on its own whenever a prompt reads as a correction, in English or Vietnamese. `KEEL_CORRECT=off` silences it.
+- `/keel:correct` mines history for repeated mistakes and fixes each at the highest level that works.
 
 Not in keel:
 
@@ -127,9 +132,7 @@ Principles are one-rule skills that the lead reads and cites in its replies. The
 | A skill didn't load on its own | Only `lead` and `help` load from the user's words, and `typescript-best-practices` loads on `.ts` and `.tsx` files. The others load when the user types them or when the lead reads them, and it doesn't run every skill. |
 | Parallel agents overwrote each other | Give each agent its own worktree with `isolation: "worktree"`, or a separate `claude --worktree` session. |
 | Subagents stopped mid-task | Closing the terminal stops them. Type `/bg` first next time. To recover, follow the Session pickup playbook against their worktrees. |
-| The git guard blocked a command | It blocks force-pushes, `reset --hard`, `clean -f`, and whole-tree discards on purpose. An owner publishes its own rebased branch with `git push --force-with-lease origin <branch>`. See [`hooks/git-guard.py`](../../hooks/git-guard.py). |
-| The correct reminder fired on a prompt that wasn't a correction | Its patterns live in one table at the top of [`hooks/correct-reminder.py`](../../hooks/correct-reminder.py). Set `KEEL_CORRECT=off` to silence it. |
-| Every turn now takes an extra review pass | That's [`hooks/think.py`](../../hooks/think.py): it injects a dig protocol on each prompt and blocks the first stop of each turn for a review. Set `KEEL_THINK=off` to turn it off. |
+| The git guard blocked a command | It blocks force-pushes, `reset --hard`, `clean -f`, and whole-tree discards on purpose. An owner publishes its own rebased branch with `git push --force-with-lease=<branch>:<sha> origin <branch>`, pinned to the SHA it last pushed. See [`hooks/git-guard.py`](../../hooks/git-guard.py). |
 | An overnight run moved but finished nothing | `/loop` needs a check that can pass or fail, not a duration. See [guide page 7](../../docs/guide/07-overnight.md). |
 | The reply claims success from a green build | Ask for the real command, flow, stored value, or profile. That's the prove-it-works principle. |
 

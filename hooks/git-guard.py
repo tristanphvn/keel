@@ -224,7 +224,7 @@ OPTIONS = {
     "switch": ["-f --force", "--discard-changes", "-c --create=", "-C --force-create=", "--orphan="],
     "restore": ["-W --worktree", "-S --staged", "-s --source="],
 }
-Git = namedtuple("Git", "sub opts operands text")
+Git = namedtuple("Git", "sub opts operands text leases")
 
 def parse_git(args, stdin):
     j = 0
@@ -233,7 +233,7 @@ def parse_git(args, stdin):
     sub = args[j] if j < len(args) else None
     spellings = {name: (option.rstrip("=").split()[-1], option.endswith("="))
                  for option in OPTIONS.get(sub, []) for name in option.rstrip("=").split()}
-    opts, operands, rest = set(), [], iter(args[j + 1:])
+    opts, operands, leases, rest = set(), [], [], iter(args[j + 1:])
     for a in rest:
         if a == "--":
             operands += rest
@@ -242,6 +242,8 @@ def parse_git(args, stdin):
             meant = [spellings[name]] if name in spellings else \
                 [spellings[n] for n in spellings if n.startswith(name) and n.startswith("--") and len(name) > 2]
             opts.update(canonical for canonical, _ in meant or [(name, False)])
+            if meant == [("--force-with-lease", False)] and "=" in a:
+                leases.append(a.partition("=")[2])
             if len(meant) == 1 and meant[0][1] and "=" not in a:
                 next(rest, None)
         elif a.startswith("-") and len(a) > 1:
@@ -254,12 +256,12 @@ def parse_git(args, stdin):
                     break
         else:
             operands.append(a)
-    return Git(sub, opts, operands, "\n".join(args + stdin))
+    return Git(sub, opts, operands, "\n".join(args + stdin), leases)
 
 PROTECTED = re.compile(r"main|master|trunk|develop|release.*")
 BRANCH = re.compile(r"[\w.-]+(/[\w.-]+)*")
 FORCE_BLOCKED = ("force-push is blocked; add a commit instead. Only --force-with-lease onto a named branch that is not "
-                 "protected is allowed, as in git push --force-with-lease origin <branch>")
+                 "protected is allowed, as in git push --force-with-lease=<branch>:<sha> origin <branch>")
 DELETE_BLOCKED = "deleting a protected branch on the remote is blocked; the human does this deliberately"
 WHOLE_TREE = {".", "./", ":/", "*"}
 DISCARD = "discarding the whole working tree is blocked; restore specific paths"
@@ -282,6 +284,10 @@ def push_rule(git):
     if not git.opts & {"--force-with-lease", "--force-if-includes"}:
         return None
     if git.opts & {"--all", "--branches", "--tags"} or not dests or not all(map(named_branch, dests)):
+        return FORCE_BLOCKED
+    # A pinned lease must name a branch this push updates; git pushes without force past a lease on another ref, so a
+    # mismatch is a mistake, and failing closed keeps the lease honest.
+    if any(lease.partition(":")[0].removeprefix("refs/heads/") not in dests for lease in git.leases):
         return FORCE_BLOCKED
     return None
 
