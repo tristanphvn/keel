@@ -42,6 +42,16 @@ DENIED = {
         "git push --force-with-lease origin",
         "git push --force-with-lease origin releases",
         'git push --force-with-lease origin "$(git branch --show-current)"',
+        "git push --force-with-lease=main:abc123 origin main",
+        "git push --force-with-lease=my-branch:abc123 origin main",
+        "git push --force-with-lease=my-branch:abc123 --all origin",
+        "git push --force-with-lease=my-branch:abc123 --mirror origin",
+        "git push --force-with-lease=my-branch:abc123 origin",
+        "git push --force-with-lease=main:abc123 origin my-branch",
+        "git push --force-with-lease=other:abc123 origin my-branch",
+        "git push --force-with-lease=my-branch:abc123 --force-with-lease=main:def456 origin my-branch",
+        "git push --force-with=main:abc123 origin my-branch",
+        "git push --force-with-lease=:abc123 origin my-branch",
     ],
     RESET: [
         "git reset --hard HEAD~1",
@@ -168,6 +178,11 @@ ALLOWED = [
     "git push --force-with-lease origin HEAD:my-branch",
     "git push --force-with-lease origin refs/heads/my-branch",
     'bash -c "git push --force-with-lease origin my-branch"',
+    "git push --force-with-lease=my-branch:abc123 origin my-branch",
+    "git push --force-with-lease=my-branch origin my-branch",
+    "git push --force-with-lease=refs/heads/my-branch:abc123 origin HEAD:my-branch",
+    "git push --force-with=my-branch:abc123 origin my-branch",
+    'bash -c "git push --force-with-lease=my-branch:abc123 origin my-branch"',
 ]
 
 TRAILER_COMMITS = [

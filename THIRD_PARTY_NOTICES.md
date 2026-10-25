@@ -7,7 +7,7 @@ cited as references are listed after them.
 ## pstack
 
 - **Author:** Lauren Tan ([poteto](https://x.com/poteto))
-- **Source:** <https://github.com/cursor/plugins/tree/main/pstack>, pstack 0.15.5 at commit `12d587d`
+- **Source:** <https://github.com/cursor/plugins/tree/main/pstack>, pstack 0.15.30 at commit `8b3326d`
 - **Used for:** the skills, playbooks, principles, references, scripts and guide that keel adapts, and the two
   agents keel renames to `ponytail` and `critic`. keel's changes are described in [`UPSTREAM.md`](./UPSTREAM.md).
   pstack itself adapted some material from the projects below.
@@ -104,7 +104,7 @@ SOFTWARE.
 - **Author:** Matt Pocock
 - **Source:** <https://github.com/mattpocock/skills>, the `git-guardrails-claude-code` skill
 - **Used for:** [`hooks/git-guard.py`](./hooks/git-guard.py), adapted to inspect only real git command segments
-  and to allow `--force-with-lease` onto a named branch that is not protected.
+  and to allow `--force-with-lease` onto a named branch that is not protected, when every lease names a branch the push updates.
 
 ```
 MIT License
