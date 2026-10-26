@@ -25,6 +25,8 @@ claude plugin marketplace add tristanphvn/keel
 claude plugin install keel@keel
 ```
 
+Claude Code leaves auto-update off for third-party marketplaces, so keel stays on the version you installed. To turn it on, run `/plugin`, open the **Marketplaces** tab, select `keel`, and choose **Enable auto-update**. To update once by hand, run `claude plugin update keel@keel`.
+
 To try it for one session without installing, clone the repository and run `claude --plugin-dir ./keel`.
 
 Skills run as `/keel:<name>`, and the agents are `keel:ponytail` and `keel:critic`. The main session loads `lead` on its own when a task needs it, or you type `/keel:lead`. The other keel skills are user-invoked, except `typescript-best-practices`, which loads on its own for `.ts` and `.tsx` files. `lead` reads the user-invoked ones by path when a step needs one.
@@ -169,6 +171,7 @@ the full rules and playbooks live in [`skills/lead/SKILL.md`](./skills/lead/SKIL
 | [`/keel:why`](./skills/why/SKILL.md) | you want to know why something was built this way. discovers available MCPs at run time and queries each evidence category in parallel (source control, issue tracker, long-form docs, real-time chat, infra observability, error tracking, analytics warehouse). |
 | [`/keel:recall`](./skills/recall/SKILL.md) | you're starting or resuming work and want your recent context on a topic rebuilt from your own chat history and the shared record, handed back as a tight current-state brief. |
 | [`/keel:ketchup`](./skills/ketchup/SKILL.md) | you want what changed in this chat since your last message, in plain words and small visuals, with every item waiting on you listed and decidable from the reply alone, even when that makes the reply long. |
+| [`/keel:ketchup-video`](./skills/ketchup-video/SKILL.md) | you want the `/keel:ketchup` catch-up as a short silent video of slides, with the calls waiting on you as text under it. |
 | [`/keel:blast-radius`](./skills/blast-radius/SKILL.md) | you have a small-looking change and want to know what else it could break, with the one fact it's safe because of proven by running code, not asserted. |
 | [`/keel:architect`](./skills/architect/SKILL.md) | you're about to write code that crosses a function boundary and want the caller's usage, types, and module shape settled first. |
 | [`/keel:arena`](./skills/arena/SKILL.md) | you want N parallel attempts at the same thing, then to grab the best parts of each. |
@@ -314,7 +317,7 @@ pstack's Cursor model rule file does not carry over. Run `/keel:setup` once in C
 
 ## credits and license
 
-- **pstack** by Lauren Tan ([poteto](https://x.com/poteto)), from [cursor/plugins](https://github.com/cursor/plugins/tree/main/pstack) at commit `8b3326d` (pstack 0.15.30), MIT. keel's skills, playbooks, principles, references, scripts, guide and both agents are adapted from it.
+- **pstack** by Lauren Tan ([poteto](https://x.com/poteto)), from [cursor/plugins](https://github.com/cursor/plugins/tree/main/pstack) at commit `99b609a` (pstack 0.15.32), MIT. keel's skills, playbooks, principles, references, scripts, guide and both agents are adapted from it.
 - **Git guardrails** by Matt Pocock, from [mattpocock/skills](https://github.com/mattpocock/skills), MIT. `hooks/git-guard.py` is adapted from it.
 - **keel's changes** by [alexnthnz](https://github.com/alexnthnz), MIT.
 

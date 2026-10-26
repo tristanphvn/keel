@@ -59,6 +59,7 @@ The default answer is the lead, which runs most of the others when its steps nee
 | Understand a change or subsystem, explained plainly | [`/keel:teach`](../teach/SKILL.md) |
 | Catch up on their own recent work on a topic | [`/keel:recall`](../recall/SKILL.md) |
 | Catch up on what changed in this chat since their last message, and what waits on them | [`/keel:ketchup`](../ketchup/SKILL.md) |
+| Watch that catch-up as a short silent video instead of reading it | [`/keel:ketchup-video`](../ketchup-video/SKILL.md) |
 | Know what a small diff could break outside itself | [`/keel:blast-radius`](../blast-radius/SKILL.md) |
 | Settle types and module shape before code that crosses a function boundary | [`/keel:architect`](../architect/SKILL.md) |
 | Get several attempts at one brief, merged into the best one | [`/keel:arena`](../arena/SKILL.md) |
@@ -94,7 +95,7 @@ Close calls:
 - `/keel:arena` gives every worker the same brief and merges the best parts. `/keel:swarm` splits work into slices or a race and returns one report.
 - `/keel:architect` implements right after it settles the design. Add "with checkpoint" to review the design before it writes code.
 - `/keel:interrogate` reviews the diff. `/keel:blast-radius` looks for breakage outside the diff and proves the one fact that makes the change safe.
-- `/keel:ketchup` catches up on this chat since the last message. `/keel:recall` rebuilds context across recent chats. Resuming one specific chat or branch is the Session pickup playbook.
+- `/keel:ketchup` catches up on this chat since the last message. `/keel:recall` rebuilds context across recent chats. Resuming one specific chat or branch is the Session pickup playbook. `/keel:ketchup-video` is the same catch-up shown as a video, with the calls waiting on them as text under it.
 - `/keel:figure-it-out` designs one rigorous run. The Orchestrate playbook runs a program that spans days and many PRs. The Autonomous run playbook drives one task to a finish condition.
 - `/keel:correct` mines history for repeated mistakes and fixes each at the highest level that works.
 
