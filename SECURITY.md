@@ -19,6 +19,7 @@ keel runs locally inside Claude Code. The parts most worth a security review are
 
 - [`hooks/git-guard.py`](./hooks/git-guard.py), which decides which git commands an agent may run;
 - [`hooks/lead-reminder.sh`](./hooks/lead-reminder.sh);
+- [`hooks/lead-gate.py`](./hooks/lead-gate.py), which decides whether any tool may run before the lead is loaded;
 - the scripts under [`skills/lead/scripts/`](./skills/lead/scripts/), which call the GitHub CLI.
 
 keel sends nothing anywhere itself. Its playbooks use the GitHub CLI and, optionally, the Codex CLI, under your own

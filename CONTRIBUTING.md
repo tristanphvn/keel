@@ -20,6 +20,8 @@ so a good change keeps that work recognizable and credited.
    sh -n codex/hooks/lead-reminder.sh
    python3 -m py_compile hooks/git-guard.py
    python3 hooks/test_git_guard.py
+   python3 -m py_compile hooks/lead-gate.py
+   python3 hooks/test_lead_gate.py
    node bin/check-docs.mjs
    bash skills/qmd/scripts/test-setup-qmd.sh
    (cd skills/lead/scripts && bun install --frozen-lockfile && bun run test)

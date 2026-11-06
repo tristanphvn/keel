@@ -64,7 +64,7 @@ keel spends extra tokens on subagents and review panels. That's the price of the
 
 - Rerun `/keel:setup` and pick cheaper models. A strong model in the main session with cheaper, faster models such as `sonnet` or `haiku` in the code roles is a good split.
 - Shorten a panel list. Each entry runs one subagent.
-- Save `/lead` for work that needs rigor. A small, obvious edit doesn't.
+- The lead gate loads `/lead` before the first tool call of every session. A small, obvious edit still runs directly, without the loop.
 
 ## Run your first task
 
@@ -76,6 +76,6 @@ Pick something real but small, and describe it the way you'd describe it to a co
 
 Watch the todo list. Its first items are the matched playbook's steps copied in, the Feature playbook for this prompt. If `/lead` skips a step, the step stays in the list with `skip: <reason>`, so you can see what it chose not to do.
 
-From here you can type normal follow-ups. `/lead` is sticky. It stays on for the conversation until you opt out by saying so.
+From here you can type normal follow-ups. `/lead` is sticky. It stays on for the conversation. To opt out, set `KEEL_LEAD_GATE=off`.
 
 Next: [Route work through `/lead`](./02-lead.md).
