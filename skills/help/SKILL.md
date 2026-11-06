@@ -33,7 +33,7 @@ Check the state that changes the answer, and mention it only when it does:
 
 keel needs `git`, the GitHub CLI `gh` signed in, `python3` for the hooks, `bun` for the playbook scripts, and `node` for the plan checker. Only `lead` and `help` load from the user's words, and `typescript-best-practices` loads when the agent touches a `.ts` or `.tsx` file. The other skills load when the user types them or when the lead reads them for a step. The [README](../../README.md) and [guide page 1](../../docs/guide/01-setup.md) have the details. Offer to word their first prompt with them.
 
-If cost is the worry, say where the tokens go and how to spend fewer. keel spends extra tokens on subagents and review panels. Rerun `/keel:setup` and pick cheaper models, such as `sonnet` or `haiku`, for the roles that matter least. A role set to `inherit` runs on the session's model. A shorter panel list runs fewer subagents, one for each entry. Save the lead for work that needs rigor.
+If cost is the worry, say where the tokens go and how to spend fewer. keel spends extra tokens on subagents and review panels. Rerun `/keel:setup` and pick cheaper models, such as `sonnet` or `haiku`, for the roles that matter least. A role set to `inherit` runs on the session's model. A shorter panel list runs fewer subagents, one for each entry. Once the lead is loaded, small asks run directly without the loop, so they cost no subagents.
 
 keel also installs in Codex, with `codex plugin marketplace add tristanphvn/keel` and `codex plugin add keel@keel`. There the user invokes `$keel:lead`, which reads the same playbooks through [its Codex adapter](../../codex/skills/lead/SKILL.md). This help skill and the other `/keel:<name>` commands are Claude Code only. The README's Codex section covers the sandbox approvals.
 
@@ -41,7 +41,7 @@ keel also installs in Codex, with `codex plugin marketplace add tristanphvn/keel
 
 The lead matches the task to a playbook, copies the playbook's steps into the todo list, and runs the other skills as the steps need them. A step it skips stays in the list as `skip: <reason>`. A good prompt states the goal and how to tell it's done. It doesn't list skills, because a hand-written sequence tends to drop or reorder steps the playbook would keep. [Guide page 2](../../docs/guide/02-lead.md) has examples.
 
-The lead stays on across turns. The `hooks/lead-reminder.sh` hook re-injects one line on every prompt, so a new task that needs rigor loads the lead again. The user opts out by saying so, or silences the hook with `KEEL_REMINDER=off`. Mid-chat, "new task" makes the lead match a fresh playbook.
+The lead stays on across turns. The `hooks/lead-reminder.sh` hook re-injects one line on every prompt, and `hooks/lead-gate.py` denies every tool except `Skill`, `ToolSearch` and `AskUserQuestion` until the session loads the lead. Set `KEEL_LEAD_GATE=off` to turn the gate off. Once loaded, the lead runs small asks directly, without the loop. To opt out of the lead entirely, set `KEEL_LEAD_GATE=off` and `KEEL_REMINDER=off`. Mid-chat, "new task" makes the lead match a fresh playbook.
 
 The lead delegates code-writing to [`keel:ponytail`](../../agents/ponytail.md) builders and reviews with [`keel:critic`](../../agents/critic.md), a read-only reviewer with one lens per spawn. To get the same builder from a subagent of your own, spawn it with `subagent_type: "keel:ponytail"`.
 
@@ -125,8 +125,9 @@ Principles are one-rule skills that the lead reads and cites in its replies. The
 
 | Symptom | Fix |
 |---|---|
-| The lead stopped applying after a few turns | Check that `KEEL_REMINDER` is not `off`, or type `/keel:lead` at the start of each task. |
-| A question got treated as the next step of the last task | Say "new task", or say the turn doesn't need the lead. |
+| The lead stopped applying after a few turns | Check that `KEEL_REMINDER` and `KEEL_LEAD_GATE` are not `off`, or type `/keel:lead` at the start of each task. |
+| Every tool call is denied with "keel lead gate" | The session has not loaded the lead yet. Load `keel:lead` (or type `/keel:lead`), or set `KEEL_LEAD_GATE=off` to turn the gate off. |
+| A question got treated as the next step of the last task | Say "new task", or say the turn doesn't need the loop. |
 | A new model choice had no effect | Check that `/keel:setup` wrote `keel-models.md` under `${CLAUDE_CONFIG_DIR:-$HOME/.claude}` for the profile in use. Subagents already running keep their model. |
 | Runs cost more than expected | See the cost paragraph under Get set up. |
 | A skill didn't load on its own | Only `lead` and `help` load from the user's words, and `typescript-best-practices` loads on `.ts` and `.tsx` files. The others load when the user types them or when the lead reads them, and it doesn't run every skill. |

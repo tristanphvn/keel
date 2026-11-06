@@ -30,6 +30,8 @@ jobs:
           python3 -m py_compile hooks/git-guard.py
           sh -n hooks/lead-reminder.sh
           python3 hooks/test_git_guard.py
+          python3 -m py_compile hooks/lead-gate.py
+          python3 hooks/test_lead_gate.py
           echo '{}' | sh hooks/lead-reminder.sh | python3 -m json.tool > /dev/null
 
       - name: Check the docs

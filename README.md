@@ -50,10 +50,11 @@ To allow git writes for a whole session, start or resume Codex with `--add-dir` 
 
 Codex asks you to review the lead reminder in `/hooks` before it runs. The Codex plugin does not load Claude Code's Git guard. That guard is a best-effort check of the command text, so do not rely on it as a Codex safety check.
 
-For Claude Code, keel ships two hooks:
+For Claude Code, keel ships three hooks:
 
 - [`hooks/git-guard.py`](./hooks/git-guard.py), adapted from Matt Pocock's [git guardrails](https://github.com/mattpocock/skills) (MIT), blocks force-pushes, deleting a protected branch on the remote, `reset --hard`, `clean -f`, `filter-branch`, `filter-repo`, and commands that discard the whole working tree, such as `git checkout .` and `git checkout -f`. The protected branches are `main`, `master`, `trunk`, `develop` and `release*`. The one exception is `--force-with-lease` onto a branch that the command names and that is not protected, so an owner can publish its own rebased branch with `git push --force-with-lease=<branch>:<sha> origin <branch>`, pinned to the SHA it last pushed. A lease that names a branch the push does not update is blocked. The guard catches the common forms an agent types by accident, including commands wrapped in `bash -c`, `eval`, `$(...)`, subshells, heredocs fed to a shell, launchers such as `sudo` or `xargs`, and abbreviated options. It skips quoted text, so a commit message that mentions `git push --force` still runs, but it blocks an unquoted mention such as `echo git reset --hard`. It is not a sandbox. Deliberate constructions get past it, such as brace or glob expansion in the command name, git-core helper paths, plumbing commands, inline `-c` config, and pathspec magic. A git alias, a script file, a heredoc piped into a shell, a flag built at run time, and a command string passed to `ssh` or another language also get past it. To protect a branch, turn on your forge's branch protection. On GitHub, add a ruleset that blocks force pushes and deletion. Set `KEEL_BLOCK_AI_TRAILERS=1` to also block commits whose message carries an AI attribution trailer.
-- [`hooks/lead-reminder.sh`](./hooks/lead-reminder.sh) re-injects one line on every prompt, as pstack's sticky reminder does in Cursor: a new task that needs rigor loads `keel:lead`. Set `KEEL_REMINDER=off` to silence it.
+- [`hooks/lead-reminder.sh`](./hooks/lead-reminder.sh) re-injects one line on every prompt, as pstack's sticky reminder does in Cursor: load `keel:lead` before any tool call in the session. Set `KEEL_REMINDER=off` to silence it.
+- [`hooks/lead-gate.py`](./hooks/lead-gate.py) turns that reminder into a gate, because a reminder is text the agent can read past. Until the session loads `keel:lead` (the Skill tool, a typed `/keel:lead`, or a Read of the lead's `SKILL.md`, which is how ponytail loads it), every tool call is denied except `Skill`, `ToolSearch` and `AskUserQuestion`. A reply that needs no tool is never gated. The gate keeps one marker file per session under `${CLAUDE_CONFIG_DIR:-~/.claude}/.keel-lead-gate/` and prunes markers older than 30 days. Set `KEEL_LEAD_GATE=off` to disable it.
 
 ## get started
 
@@ -140,7 +141,7 @@ when invoked it:
 
 the full rules and playbooks live in [`skills/lead/SKILL.md`](./skills/lead/SKILL.md).
 
-[`/keel:lead`](./skills/lead/SKILL.md) is also a sticky mode: once entered it stays on across turns, applying itself when a playbook matches or the task needs rigor and staying out of the way otherwise. opt out any time by saying so.
+[`/keel:lead`](./skills/lead/SKILL.md) is also a sticky mode: once entered it stays on across turns, the lead gate makes every session load it before the first tool call, and once loaded it runs a playbook when one matches and does small asks directly. set `KEEL_LEAD_GATE=off` to opt out.
 
 [`/keel:lead`](./skills/lead/SKILL.md) works extremely well with claude code's `/loop` command. you can make claude code work for many hours without sacrificing rigor.
 
@@ -291,7 +292,7 @@ keel changes how pstack runs, not what it teaches.
 - **Platform.** Cursor's tools become their Claude Code equivalents. The Task tool becomes the Agent tool, Cursor cloud agents become background subagents in worktrees, and pull request operations go through `gh`. cursor-team-kit's slop and control skills become Claude Code's `/simplify`, Bash (tmux for interactive TUIs) and the browser skills, and Cursor's `create-skill` becomes `anthropic-skills:skill-creator`.
 - **Names.** `poteto-mode`, `poteto-agent`, Comment Sicko and `setup-pstack` become `lead`, `ponytail`, `critic` and `setup`.
 - **Models.** Claude Code has no grok. Review panels use Opus, Fable and Sonnet, and `interrogate` adds a Codex lane. Subagent effort uses the Agent tool's `effort` parameter instead of model-slug suffixes, and pstack's fast mode does not carry over.
-- **Shape.** The lead is a skill loaded by the main session, because running a session as an agent replaces Claude Code's own instructions. critic is read-only, ponytail keeps memory, and keel adds the git guard and the lead reminder.
+- **Shape.** The lead is a skill loaded by the main session, because running a session as an agent replaces Claude Code's own instructions. critic is read-only, ponytail keeps memory, and keel adds the git guard, the lead reminder and the lead gate.
 - **Removed.** The benny Slack automation pack, the `make-bot-ui` and `poteto-help` skills, Cursor's plugin manifest and the root Agent Plugins manifest, and pstack's logo and illustrations. They are Cursor-only or pstack's own branding. pstack's `docs/harness/` notes on running its Cursor names inside Claude Code are removed too, because keel translates its own text.
 - **Not yet ported.** pstack's `statechart` skill, which draws TLA+ models as charts. It needs a TLA+ toolchain and pays off only once a project uses formal verification, so [UPSTREAM.md](./UPSTREAM.md) defers it.
 - **This fork.** [tristanphvn/keel](https://github.com/tristanphvn/keel) tracks [alexnthnz/keel](https://github.com/alexnthnz/keel) and adds two opt-in skills: [`/keel:help`](./skills/help/SKILL.md), rewritten for keel from pstack's `poteto-help`, and [`/keel:qmd`](./skills/qmd/SKILL.md), which has no pstack counterpart.
