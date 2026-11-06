@@ -7,7 +7,7 @@ cited as references are listed after them.
 ## pstack
 
 - **Author:** Lauren Tan ([poteto](https://x.com/poteto))
-- **Source:** <https://github.com/cursor/plugins/tree/main/pstack>, pstack 0.15.30 at commit `8b3326d`
+- **Source:** <https://github.com/cursor/plugins/tree/main/pstack>, pstack 0.15.32 at commit `99b609a`
 - **Used for:** the skills, playbooks, principles, references, scripts and guide that keel adapts, and the two
   agents keel renames to `ponytail` and `critic`. keel's changes are described in [`UPSTREAM.md`](./UPSTREAM.md).
   pstack itself adapted some material from the projects below.

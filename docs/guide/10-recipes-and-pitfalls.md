@@ -140,6 +140,8 @@ You rarely need more words. You need the right name, and [the principles page](.
 
 [`/ketchup`](../../skills/ketchup/SKILL.md) tells you in plain words what changed since your last message, with a small box diagram or an existing screenshot. Then it lists every call waiting on you, each with its link, what it changes, the evidence, the risk, and a pick. It is read-only and posts nothing, so it is safe to run while agents are still working.
 
+To watch the catch-up instead, run [`/ketchup-video`](../../skills/ketchup-video/SKILL.md). It shows what happened in a short silent video of slides, and lists the calls waiting on you as text under it.
+
 ## Get the reply in plain words
 
 ```text
