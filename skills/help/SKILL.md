@@ -59,7 +59,7 @@ The default answer is the lead, which runs most of the others when its steps nee
 | Understand a change or subsystem, explained plainly | [`/keel:teach`](../teach/SKILL.md) |
 | Catch up on their own recent work on a topic | [`/keel:recall`](../recall/SKILL.md) |
 | Catch up on what changed in this chat since their last message, and what waits on them | [`/keel:ketchup`](../ketchup/SKILL.md) |
-| Watch that catch-up as a short silent video instead of reading it | [`/keel:ketchup-video`](../ketchup-video/SKILL.md) |
+| Watch that catch-up as a short subtitled video instead of reading it | [`/keel:ketchup-video`](../ketchup-video/SKILL.md) |
 | Know what a small diff could break outside itself | [`/keel:blast-radius`](../blast-radius/SKILL.md) |
 | Settle types and module shape before code that crosses a function boundary | [`/keel:architect`](../architect/SKILL.md) |
 | Get several attempts at one brief, merged into the best one | [`/keel:arena`](../arena/SKILL.md) |
