@@ -4,4 +4,4 @@
 # Set KEEL_REMINDER=off to silence it.
 [ "${KEEL_REMINDER:-on}" = "off" ] && exit 0
 cat >/dev/null
-printf '%s\n' '{"hookSpecificOutput":{"hookEventName":"UserPromptSubmit","additionalContext":"keel reminder: if keel:lead is not loaded yet in this session, load it before any tool call, then follow it. The lead gate denies other tools until then. A new task matches a fresh playbook."}}'
+printf '%s\n' '{"hookSpecificOutput":{"hookEventName":"UserPromptSubmit","additionalContext":"keel reminder: if keel:lead is not loaded yet in this session, load it before any tool call, then follow it. The lead gate denies other tools until then. A new task matches a fresh playbook. A change that gets committed is not a small ask, so open the todo list of the matched playbook before the first edit."}}'
