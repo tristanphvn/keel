@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-base="${BASE:-e58dd043600587dbaf58ba315e7f2b38373eeb43}"
+base="${BASE:-7a583913eb1b8d1a0ee76753d1a2cf072e7b54f9}"
 removed=(.cursor-plugin assets docs/guide/images docs/harness automations/benny skills/make-bot-ui skills/poteto-help skills/statechart plugin.json)
 apply=
 if [ "${1:-}" = --apply ]; then
