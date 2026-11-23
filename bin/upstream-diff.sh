@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-base="${BASE:-c742dd61706fbacc1b95f1a20b7b988cf096ce6c}"
+base="${BASE:-7a583913eb1b8d1a0ee76753d1a2cf072e7b54f9}"
 removed=(.cursor-plugin assets docs/guide/images docs/harness automations/benny skills/make-bot-ui skills/poteto-help skills/statechart plugin.json)
 apply=
 if [ "${1:-}" = --apply ]; then
@@ -62,4 +62,17 @@ awk '/^index / { split($2, ids, /\.\./); if (ids[1] !~ /^0+$/) print ids[1] }' "
 		git -C "$root" cat-file -e "$blob" 2>/dev/null ||
 			git -C "$clone" cat-file blob "$blob" | git -C "$root" hash-object -w --stdin >/dev/null
 	done
-git -C "$root" apply --3way -p0 "$patch"
+# git apply aborts the whole patch when it deletes a file whose content
+# differs from the base blob, so git rm every deletion and exclude it.
+exclude=()
+while read -r path blob; do
+	exclude+=(--exclude="$path")
+	[ -e "$root/$path" ] || continue
+	[ "$(git -C "$root" hash-object "$root/$path")" = "$blob" ] || echo "D $path (keel had edits)"
+	git -C "$root" rm -q "$path"
+done < <(awk '
+	/^diff --git / { path = $3; deleted = 0 }
+	/^deleted file mode / { deleted = 1 }
+	deleted && /^index / { split($2, ids, /\.\./); print path, ids[1] }
+' "$patch")
+git -C "$root" apply --3way -p0 ${exclude[@]+"${exclude[@]}"} "$patch"
